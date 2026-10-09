@@ -49,7 +49,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "text_opacity": 5,
     "text_font_size": 11,
     "text_fg": "#111111",
-    "number_fg": "#CCCCCC",
+    "number_fg": "#CDD5E2",
+    "number_font_family": "Times New Roman",
 }
 CONFIG: Dict[str, Any] = dict(DEFAULT_CONFIG)
 
@@ -253,7 +254,7 @@ def show_banner():
             "Phím F2         : Mở cửa sổ Cài đặt cấu hình (Setup)",
             "Phím ESC        : Thoát khỏi tool (khi cửa sổ đang mở)",
             "----------------------------------------------------------------------------",
-            "Vị trí & độ mờ  : Cạnh giờ hệ thống (Chữ xám #CCCCCC thon gọn • Mờ 5%)",
+            "Vị trí & kiểu chữ: Cạnh giờ hệ thống (Times New Roman thon gọn kiểu Word • Mờ 5%)",
             f"Load chuột      : {cursor_dur}s • Model: {model_name}",
             f"Khóa API        : {api_status}",
         ],

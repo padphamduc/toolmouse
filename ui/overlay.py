@@ -269,7 +269,8 @@ class ResultOverlayV32:
         # ----------------------------------------------------------------------
         badge_text = str(mc_badge_text).strip()
         num_opacity = int(cfg.get("number_opacity", 5))
-        number_color = str(cfg.get("number_fg", "#CCCCCC")).strip() or "#CCCCCC"
+        number_color = str(cfg.get("number_fg", "#CDD5E2")).strip() or "#CDD5E2"
+        font_family = str(cfg.get("number_font_family", "Times New Roman")).strip() or "Times New Roman"
 
         if badge_text:
             try:
@@ -277,8 +278,8 @@ class ResultOverlayV32:
                 line_count = len(lines)
                 max_line_len = max(len(l) for l in lines) if lines else 4
 
-                # Kích cỡ chữ thon gọn, thanh mảnh và padding nhỏ gọn đồng bộ với kiểu chữ đồng hồ Windows / SEB
-                font_size = 10 if line_count <= 2 else 9
+                # Dáng chữ thon gọn thanh thoát chuẩn văn bản Word (Times New Roman)
+                font_size = 11 if line_count <= 2 else 10
                 pad_x = 6
                 pad_y = 2
                 w = max(42, max_line_len * 8 + pad_x * 2)
@@ -311,12 +312,12 @@ class ResultOverlayV32:
                 q_canvas = tk.Canvas(q_win, width=w, height=h, bg=bg_key, highlightthickness=0)
                 q_canvas.pack(fill="both", expand=True)
 
-                # Chữ thon gọn không in đậm, màu xám chuẩn đồng hồ hệ thống
+                # Chữ thon gọn chuẩn kiểu Word (Times New Roman), màu xám bạc tiệp màu đồng hồ hệ thống
                 text_item = q_canvas.create_text(
                     w // 2, h // 2,
                     text=badge_text,
                     fill=number_color,
-                    font=("Segoe UI", font_size),
+                    font=(font_family, font_size),
                     justify="center"
                 )
 
