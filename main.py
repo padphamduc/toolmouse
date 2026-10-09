@@ -97,6 +97,18 @@ def save_badge_position(x: int, y: int):
         pass
 
 
+def save_opacity(op: int):
+    """Ghi nhớ độ mờ của badge khi người dùng nhấp 1 lần vào đáp án."""
+    global CONFIG
+    CONFIG["number_opacity"] = int(op)
+    CONFIG["text_opacity"] = int(op)
+    save_config({"number_opacity": int(op), "text_opacity": int(op)})
+    try:
+        print(CYAN + f"✔ [Chuột Trái x1 vào đáp án] Đổi độ mờ: {int(op)}% (Đã lưu cấu hình)")
+    except Exception:
+        pass
+
+
 load_config()
 
 # Module nội bộ
@@ -184,7 +196,11 @@ if os.name == "nt" and "--setup" not in sys.argv and "--no-hide" not in sys.argv
     hide_console()
 
 # Khởi tạo overlay hiển thị kết quả
-result_overlay = ResultOverlayV32(get_config_func=load_config, on_save_pos_func=save_badge_position)
+result_overlay = ResultOverlayV32(
+    get_config_func=load_config,
+    on_save_pos_func=save_badge_position,
+    on_save_opacity_func=save_opacity,
+)
 
 # ==============================================================================
 # QUẢN LÝ CON TRỎ XOAY (LOADING CURSOR)
@@ -270,7 +286,7 @@ def show_banner():
             "Chuột Trái x4   : Tự động gõ đáp án tự luận vào ô đang có con trỏ",
             "Chuột Trái x2   : Hiện kết quả (Form mảnh mai ẩn giấu)",
             "Kéo thả chuột   : Nhấp giữ chuột trái vào đáp án để kéo thả (Tự nhớ vị trí)",
-            "Chuột Trái x1   : Dừng ngay khi đang gõ; nhấp ra ngoài đáp án để ẩn (0ms)",
+            "Chuột Trái x1   : Đổi độ mờ (2%..100%) khi bấm vào đáp án; Ẩn (0ms) khi bấm ra ngoài",
             "Phím F2         : Mở cửa sổ Cài đặt cấu hình (Setup)",
             "Phím ESC        : Thoát khỏi tool (khi cửa sổ đang mở)",
             "----------------------------------------------------------------------------",
@@ -734,7 +750,7 @@ def low_level_mouse_handler(nCode, wParam, lParam):
             if is_dragging_badge:
                 dx = cursor_x - drag_start_mouse_x
                 dy = cursor_y - drag_start_mouse_y
-                if abs(dx) > 1 or abs(dy) > 1:
+                if abs(dx) > 3 or abs(dy) > 3:
                     has_moved_while_dragging = True
                     result_overlay.move_badge(drag_start_badge_x + dx, drag_start_badge_y + dy)
             try:
@@ -743,7 +759,7 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                 return 0
 
         # ----------------------------------------------------------------------
-        # 2. XỬ LÝ THẢ CHUỘT (DROP) VÀ LƯU VỊ TRÍ MỚI
+        # 2. XỬ LÝ THẢ CHUỘT (DROP) VÀ LƯU VỊ TRÍ MỚI / CLICK ĐỔI ĐỘ MỜ
         # ----------------------------------------------------------------------
         elif wParam == WM_LBUTTONUP:
             if is_dragging_badge:
@@ -751,6 +767,9 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                 if has_moved_while_dragging:
                     final_x, final_y = result_overlay.get_badge_pos()
                     save_badge_position(final_x, final_y)
+                else:
+                    # Bấm 1 lần vào số đáp án (không kéo rê) -> Chu kỳ đổi độ mờ & lưu ngay
+                    result_overlay.cycle_opacity()
                 with mouse_lock:
                     left_click_count = 0
                     last_left_time = 0.0

@@ -6,6 +6,8 @@ Overlay Rendering Engine for Tool v3.2
 - Nền sáng: Dùng màu nền #FFFFFF và chữ xám đậm #1A1A1A, mép khử răng cưa hòa sắc mượt mà không lem màu
 - Nền tối: Dùng màu nền #000000 và chữ xám bạc #CDD5E2
 - Tự động kiểm tra toạ độ an toàn (Safe Bounds Check): Tránh tuyệt đối lỗi trôi toạ độ ra ngoài màn hình
+- TÍNH NĂNG CHUYỂN ĐỔI ĐỘ MỜ BẰNG 1 CÚ NHẤP CHUỘT VÀO ĐÁP ÁN:
+  Chu kỳ: 2% -> 4% -> 6% -> 8% -> 10% -> 20% -> 40% -> 60% -> 80% -> 100% và đảo ngược lại, tự động lưu!
 - Hỗ trợ KÉO THẢ (Drag and Drop) mượt mà đến mọi vị trí trên màn hình
 - TỰ ĐỘNG GHI NHỚ VỊ TRÍ lần cuối khi thả để các lần sau mở đúng vị trí đó
 - Vị trí mặc định: Tại khu vực đồng hồ hệ thống trên Taskbar
@@ -33,11 +35,14 @@ SWP_NOZORDER = 0x0004
 SWP_NOACTIVATE = 0x0010
 SWP_SHOWWINDOW = 0x0040
 
+OPACITY_STEPS = [2, 4, 6, 8, 10, 20, 40, 60, 80, 100]
+
 
 class ResultOverlayV32:
-    def __init__(self, get_config_func, on_save_pos_func=None):
+    def __init__(self, get_config_func, on_save_pos_func=None, on_save_opacity_func=None):
         self.get_config = get_config_func
         self.on_save_pos = on_save_pos_func
+        self.on_save_opacity = on_save_opacity_func
         self._thread = threading.Thread(target=self._run_loop, daemon=True, name="OverlayGUIThread")
         self._ready = threading.Event()
         self._root = None
@@ -49,11 +54,20 @@ class ResultOverlayV32:
         self._badge_h = 0
         self._is_showing = False
         self._is_dragging = False
+        self._has_moved = False
         self._drag_start_x = 0
         self._drag_start_y = 0
         self._win_start_x = 0
         self._win_start_y = 0
         self.last_show_time = 0.0
+
+        # Quản lý chu kỳ độ mờ
+        self._current_opacity = 100
+        self._opacity_index = len(OPACITY_STEPS) - 1
+        self._opacity_direction = -1
+        self._colorkey_hex = 0x00FFFFFF
+        self._last_cycle_time = 0.0
+
         self._thread.start()
         self._ready.wait(timeout=3)
 
@@ -70,7 +84,7 @@ class ResultOverlayV32:
         """Kiểm tra xem toạ độ chuột có nằm trong vùng của form mảnh mai (có thêm vùng đệm) hay không."""
         if not getattr(self, "_is_showing", False) or not self._q_badge_win:
             return False
-        margin = 10  # 10px đệm xung quanh giúp người dùng dễ dàng bấm trúng để kéo thả
+        margin = 10  # 10px đệm xung quanh giúp người dùng dễ dàng bấm trúng để kéo thả / click
         x1 = self._badge_x - margin
         y1 = self._badge_y - margin
         x2 = self._badge_x + self._badge_w + margin
@@ -98,6 +112,62 @@ class ResultOverlayV32:
                 self._root.after(0, lambda: self._q_badge_win.geometry(f"+{int(x)}+{int(y)}") if self._q_badge_win else None)
             except Exception:
                 pass
+
+    def set_opacity(self, op: int):
+        """Thiết lập độ mờ ngay lập tức ở cả cấp độ Win32 Layered Window và Tkinter."""
+        self._current_opacity = max(1, min(100, int(op)))
+        alpha_ratio = float(self._current_opacity) / 100.0
+        alpha_byte = max(1, min(255, int(round(255 * alpha_ratio))))
+
+        if self._q_hwnd:
+            try:
+                ctypes.windll.user32.SetLayeredWindowAttributes(
+                    self._q_hwnd, self._colorkey_hex, alpha_byte, 1 | 2
+                )
+            except Exception:
+                pass
+        if self._q_badge_win and self._root:
+            try:
+                self._root.after(0, lambda: self._q_badge_win.attributes("-alpha", alpha_ratio) if self._q_badge_win else None)
+            except Exception:
+                pass
+
+    def cycle_opacity(self) -> int:
+        """
+        Đổi độ mờ tuần tự khi bấm 1 lần vào số đáp án:
+        2% -> 4% -> 6% -> 8% -> 10% -> 20% -> 40% -> 60% -> 80% -> 100% và đảo ngược lại.
+        Tự động lưu vào cấu hình ngay sau khi click!
+        """
+        now = time.time()
+        if now - getattr(self, "_last_cycle_time", 0.0) < 0.15:
+            return getattr(self, "_current_opacity", 100)
+        self._last_cycle_time = now
+
+        if not hasattr(self, "_opacity_index"):
+            self._opacity_index = len(OPACITY_STEPS) - 1
+            self._opacity_direction = -1
+
+        if self._opacity_direction == 1:
+            self._opacity_index += 1
+            if self._opacity_index >= len(OPACITY_STEPS) - 1:
+                self._opacity_index = len(OPACITY_STEPS) - 1
+                self._opacity_direction = -1
+        else:
+            self._opacity_index -= 1
+            if self._opacity_index <= 0:
+                self._opacity_index = 0
+                self._opacity_direction = 1
+
+        new_op = OPACITY_STEPS[self._opacity_index]
+        self.set_opacity(new_op)
+
+        if self.on_save_opacity:
+            try:
+                self.on_save_opacity(new_op)
+            except Exception:
+                pass
+
+        return new_op
 
     def show_results(
         self,
@@ -289,19 +359,27 @@ class ResultOverlayV32:
                 pass
 
             if is_light_bg:
-                # Nền Taskbar sáng (như máy bạn):
-                # Nền là Trắng tinh #FFFFFF, Chữ là Xám đậm #1A1A1A
-                # Mép chữ khử răng cưa là dải xám mượt mà, hòa tan tự nhiên vào nền trắng
-                # KHÔNG BAO GIỜ XUẤT HIỆN VIỀN HỒNG!
                 bg_key = "#FFFFFF"
                 text_color = "#1A1A1A"
                 colorkey_hex = 0x00FFFFFF
             else:
-                # Nền Taskbar tối:
-                # Nền là Đen tuyền #000000, Chữ là Xám bạc #CDD5E2
                 bg_key = "#000000"
                 text_color = "#CDD5E2"
                 colorkey_hex = 0x00000000
+
+            self._colorkey_hex = colorkey_hex
+
+            # 6. KHỞI TẠO ĐỘ MỜ (OPACITY) TỪ CẤU HÌNH
+            saved_op = int(cfg.get("number_opacity", 100))
+            self._current_opacity = max(1, min(100, saved_op))
+            if self._current_opacity in OPACITY_STEPS:
+                self._opacity_index = OPACITY_STEPS.index(self._current_opacity)
+            else:
+                self._opacity_index = min(range(len(OPACITY_STEPS)), key=lambda i: abs(OPACITY_STEPS[i] - self._current_opacity))
+            self._opacity_direction = -1 if self._opacity_index == len(OPACITY_STEPS) - 1 else 1
+
+            alpha_ratio = float(self._current_opacity) / 100.0
+            q_win.attributes("-alpha", alpha_ratio)
 
             q_win.configure(bg=bg_key)
             q_win.attributes("-transparentcolor", bg_key)
@@ -326,9 +404,10 @@ class ResultOverlayV32:
             q_win.geometry(f"{w}x{h}+{x}+{y}")
             q_win.update_idletasks()
 
-            # 6. GẮN SỰ KIỆN KÉO THẢ (DRAG & DROP)
+            # 7. GẮN SỰ KIỆN KÉO THẢ (DRAG & DROP) VÀ NHẤP ĐỔI ĐỘ MỜ (CLICK OPACITY)
             def _tk_on_press(event):
                 self._is_dragging = True
+                self._has_moved = False
                 self._drag_start_x = event.x_root
                 self._drag_start_y = event.y_root
                 self._win_start_x = self._badge_x
@@ -339,19 +418,25 @@ class ResultOverlayV32:
                     return
                 dx = event.x_root - self._drag_start_x
                 dy = event.y_root - self._drag_start_y
-                self.move_badge(self._win_start_x + dx, self._win_start_y + dy)
+                if abs(dx) > 3 or abs(dy) > 3:
+                    self._has_moved = True
+                    self.move_badge(self._win_start_x + dx, self._win_start_y + dy)
 
             def _tk_on_release(event):
                 if getattr(self, "_is_dragging", False):
                     self._is_dragging = False
-                    if self.on_save_pos:
-                        self.on_save_pos(self._badge_x, self._badge_y)
+                    if getattr(self, "_has_moved", False):
+                        if self.on_save_pos:
+                            self.on_save_pos(self._badge_x, self._badge_y)
+                    else:
+                        # Bấm 1 lần vào số đáp án -> Đổi độ mờ và lưu cấu hình ngay
+                        self.cycle_opacity()
 
             q_canvas.bind("<Button-1>", _tk_on_press)
             q_canvas.bind("<B1-Motion>", _tk_on_motion)
             q_canvas.bind("<ButtonRelease-1>", _tk_on_release)
 
-            # 7. ÁP DỤNG THUỘC TÍNH WIN32 WINDOW
+            # 8. ÁP DỤNG THUỘC TÍNH WIN32 WINDOW
             top_q_hwnd = self._get_toplevel_hwnd(q_win)
             user32 = ctypes.windll.user32
             q_style = user32.GetWindowLongW(top_q_hwnd, GWL_EXSTYLE)
@@ -359,7 +444,8 @@ class ResultOverlayV32:
             q_style &= ~WS_EX_TRANSPARENT
             user32.SetWindowLongW(top_q_hwnd, GWL_EXSTYLE, q_style)
 
-            user32.SetLayeredWindowAttributes(top_q_hwnd, colorkey_hex, 255, 1)
+            alpha_byte = max(1, min(255, int(round(255 * alpha_ratio))))
+            user32.SetLayeredWindowAttributes(top_q_hwnd, colorkey_hex, alpha_byte, 1 | 2)
 
             # Luôn giữ ở lớp trên cùng (HWND_TOPMOST) và hiển thị
             user32.SetWindowPos(
