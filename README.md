@@ -21,7 +21,7 @@
   - Nhấp chuột trái 1 lần lập tức ẩn cửa sổ ở cấp độ hệ điều hành (`ShowWindow SW_HIDE`), không độ trễ, không chờ đợi.
 - **Hiển thị đáp án ngay tại vị trí số câu:**
   - Dạng hiển thị: `99 A` hoặc `99 A, C` (nhiều đáp án).
-  - Không vẽ dấu chấm đỏ. Dùng chung độ mờ đen nhạt (2%) và vị trí số câu.
+  - Không vẽ dấu chấm đỏ. Dùng chung độ mờ đen nhạt (4%) và vị trí số câu.
 - **Tự động gõ phím tự luận thông minh (Unicode Win32):**
   - Bắn phím trực tiếp bằng `SendInput` / Win32 Unicode.
   - Tuyệt đối **KHÔNG dùng Clipboard / Ctrl+V**, chống triệt để mọi cơ chế giám sát Clipboard của SEB.

@@ -223,7 +223,7 @@ class SetupDialog:
         row_op.pack(fill="x", padx=12, pady=4)
         tk.Label(row_op, text="Độ mờ đáp án trắc nghiệm:", bg=BG, fg=TEXT, font=("Segoe UI", 9), width=24, anchor="w").pack(side="left")
 
-        op_var = tk.IntVar(value=int(self.config.get("number_opacity", 2)))
+        op_var = tk.IntVar(value=int(self.config.get("number_opacity", 4)))
         op_lbl = tk.Label(row_op, text=f"{op_var.get()}%", bg=BG, fg=YELLOW, font=("Segoe UI Bold", 9), width=6, anchor="e")
 
         def on_op_change(val):
@@ -317,8 +317,8 @@ class SetupDialog:
             dbl_var.set("0.35")
             cur_var.set("1.0")
             font_var.set("11")
-            op_var.set(2)
-            op_lbl.config(text="2%")
+            op_var.set(4)
+            op_lbl.config(text="4%")
             model_var.set(GEMINI_MODELS[0])
 
         btn_save = tk.Button(

@@ -45,8 +45,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "model_name": "Gemini 3.5 Flash-Lite",
     "double_click_interval": 0.35,
     "load_cursor_duration": 1.0,
-    "number_opacity": 2,
-    "text_opacity": 2,
+    "number_opacity": 4,
+    "text_opacity": 4,
     "text_font_size": 11,
     "text_fg": "#111111",
 }
@@ -182,7 +182,7 @@ def show_banner():
     print()
     load_config()
     model_name = CONFIG.get("model", "gemini-3.5-flash-lite")
-    num_op = CONFIG.get("number_opacity", 2)
+    num_op = CONFIG.get("number_opacity", 4)
     cursor_dur = CONFIG.get("load_cursor_duration", 1.0)
     sheets_info = sheets_manager.get_status_info()
     api_status = f"Google Sheets ({sheets_info.get('gemini_masked', 'Đang tải...')})" if sheets_info.get("has_gemini") else "Đang đồng bộ ngầm..."
