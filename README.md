@@ -34,12 +34,16 @@
 | :--- | :--- | :--- |
 | **Kích hoạt app** | 🔄 Xoay chuột 1s & Chạy ngầm | Khi mở app, con trỏ chuột xoay 1 giây báo hiệu đã sẵn sàng; cửa sổ tool hoàn toàn ẩn (tàng hình). |
 | **Ctrl + Shift + M** | 🖥 **Ẩn / Hiện cửa sổ Tool** | Bắt buộc bấm tổ hợp phím này để hiển thị hoặc ẩn cửa sổ điều khiển của tool. |
+| **Ctrl + M** | 🎯 **Reset mặc định** | Đặt lại vị trí đáp án về **mặc định (góc đồng hồ)** và độ mờ về **20%**. |
 | **Chuột Phải x2** | 📸 Chụp màn hình & Giải đề | Tự động chụp toàn màn hình bằng GDI BitBlt đa tầng (vượt bộ lọc WDA DWM của SEB) và gửi AI phân tích. |
-| **Chuột Trái x2** | 👁 Hiện kết quả | Hiển thị số câu kèm đáp án (`99 A` / `99 A, C`) và nội dung tự luận ở góc dưới bên phải. |
-| **Chuột Trái x1** | ⏹ **Ẩn ngay lập tức / Dừng gõ** | **Nếu đang gõ:** dừng gõ khẩn cấp ngay tức thì.<br>**Nếu đang hiện kết quả:** ẩn biến mất ngay lập tức (0ms). |
-| **Chuột Trái x4** | ⌨ Tự động gõ đáp án | Gõ trực tiếp chữ tự luận vào ô đang đặt con trỏ chuột. |
+| **Chuột Trái x2** | 👁 Hiện kết quả | Hiển thị số câu kèm đáp án (`99 A` / `99 A, C`) thanh mảnh mờ kín đáo. |
+| **Kéo thả chuột** | 🖱 Di chuyển vị trí đáp án | Nhấn giữ chuột trái vào đáp án và kéo đến bất kỳ đâu (Tự động ghi nhớ vị trí khi thả). |
+| **Chuột Trái x1 (vào đáp án)** | 🌓 Đổi độ mờ tuần tự | Chuyển đổi mờ từ `2% -> 4% -> ... -> 100%` rồi đảo ngược lại (Tự lưu cấu hình ngay). |
+| **Chuột Trái x1 (ra ngoài)** | ⏹ **Ẩn ngay lập tức** | Biến mất ngay lập tức (0ms). |
+| **Chuột Trái x4** | ⌨ Tự động gõ đáp án | Gõ trực tiếp chữ tự luận vào ô đang đặt con trỏ chuột. *(Chuột trái x1 để dừng gõ)*. |
 | **Phím F2** | ⚙ Mở bảng Cài đặt (Setup) | Tùy chỉnh Model AI, độ mờ đáp án, thời gian nhấp chuột, kiểm tra kết nối API. |
 | **Phím ESC** | 🚪 Thoát ứng dụng | Tắt tool (khi cửa sổ tool đang mở). |
+| **Ctrl + Shift + Q** | 🚨 Thoát khẩn cấp | Đóng tool ngay lập tức trong mọi tình huống. |
 
 ---
 
