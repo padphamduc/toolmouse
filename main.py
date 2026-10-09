@@ -587,13 +587,23 @@ class MSLLHOOKSTRUCT(ctypes.Structure):
         ("mouseData", wintypes.DWORD),
         ("flags", wintypes.DWORD),
         ("time", wintypes.DWORD),
-        ("dwExtraInfo", ctypes.c_ulong),
+        ("dwExtraInfo", ctypes.c_size_t),
     ]
 
-HOOKPROC = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+LRESULT = ctypes.c_ssize_t
+HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, ctypes.c_size_t, ctypes.c_size_t)
 
 win_user32 = ctypes.windll.user32
 win_kernel32 = ctypes.windll.kernel32
+
+win_user32.CallNextHookEx.restype = LRESULT
+win_user32.CallNextHookEx.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t, ctypes.c_size_t]
+
+win_user32.SetWindowsHookExW.restype = ctypes.c_void_p
+win_user32.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, ctypes.c_void_p, wintypes.DWORD]
+
+win_user32.UnhookWindowsHookEx.restype = wintypes.BOOL
+win_user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
 
 last_right_time = 0.0
 last_left_time = 0.0
@@ -709,7 +719,10 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                     # Đã ẩn ngay lập tức ở trên (0ms)
                     pass
 
-    return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
+    try:
+        return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
+    except Exception:
+        return 0
 
 _c_mouse_proc = HOOKPROC(low_level_mouse_handler)
 _hook_thread_id = None
