@@ -732,7 +732,7 @@ _hook_thread = None
 def _mouse_message_loop():
     global _hook_thread_id, _h_hook
     _hook_thread_id = win_kernel32.GetCurrentThreadId()
-    _h_hook = win_user32.SetWindowsHookExW(WH_MOUSE_LL, ctypes.cast(_c_mouse_proc, ctypes.c_void_p), None, 0)
+    _h_hook = win_user32.SetWindowsHookExW(WH_MOUSE_LL, _c_mouse_proc, None, 0)
     msg = wintypes.MSG()
     while win_user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
         pass
