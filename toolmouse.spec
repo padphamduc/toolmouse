@@ -30,7 +30,7 @@ hidden_imports = [
 hidden_imports += collect_submodules('google.genai')
 hidden_imports += collect_submodules('pydantic')
 
-datas = []
+datas = [('assets', 'assets')]
 try:
     datas += collect_data_files('google.genai')
 except Exception:
@@ -85,4 +85,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='assets/duc_logo.ico',
 )

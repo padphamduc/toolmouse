@@ -54,6 +54,13 @@ class SetupDialog:
         root.geometry(f"{setup_w}x{setup_h}+{x}+{y}")
         root.minsize(620, 600)
 
+        try:
+            ico_path = Path(__file__).resolve().parent.parent / "assets" / "duc_logo.ico"
+            if ico_path.exists():
+                root.iconbitmap(str(ico_path))
+        except Exception:
+            pass
+
         # Header
         header = tk.Frame(root, bg=BG)
         header.pack(fill="x", padx=26, pady=(18, 10))
