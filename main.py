@@ -24,6 +24,11 @@ from pathlib import Path
 from io import BytesIO
 from typing import List, Dict, Any, Tuple, Optional
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Thiết lập đường dẫn
 APP_DIR = Path(__file__).resolve().parent
 if str(APP_DIR) not in sys.path:
@@ -588,39 +593,48 @@ def _auto_type_worker():
 def mark_saved_coordinate():
     global last_mc_badge_text, last_mc_items, last_written_items, last_status_message, busy
 
-    with busy_lock:
-        is_currently_busy = busy
+    try:
+        with busy_lock:
+            is_currently_busy = busy
 
-    with state_lock:
-        mc_text = last_mc_badge_text
-        written = list(last_written_items)
-        status_msg = last_status_message
+        with state_lock:
+            mc_text = last_mc_badge_text
+            written = list(last_written_items)
+            status_msg = last_status_message
 
-    if is_currently_busy:
+        if is_currently_busy:
+            result_overlay.show_results(
+                mc_badge_text="",
+                written_items=[],
+                status_message="",
+                is_waiting=True,
+            )
+            return
+
+        if not mc_text and not written and not status_msg:
+            try:
+                print(YELLOW + "ℹ Chưa có kết quả giải bài. Bấm Chuột Phải x2 để chụp đề!")
+            except Exception:
+                pass
+            result_overlay.show_results(
+                mc_badge_text="Chưa có kết quả",
+                written_items=[],
+                status_message="",
+                is_waiting=False,
+            )
+            return
+
         result_overlay.show_results(
-            mc_badge_text="",
-            written_items=[],
-            status_message="",
-            is_waiting=True,
-        )
-        return
-
-    if not mc_text and not written and not status_msg:
-        print(YELLOW + "ℹ Chưa có kết quả giải bài. Bấm Chuột Phải x2 để chụp đề!")
-        result_overlay.show_results(
-            mc_badge_text="",
-            written_items=[],
-            status_message="Chưa có kết quả. Bấm Chuột Phải x2 để giải bài!",
+            mc_badge_text=mc_text,
+            written_items=written,
+            status_message=status_msg,
             is_waiting=False,
         )
-        return
-
-    result_overlay.show_results(
-        mc_badge_text=mc_text,
-        written_items=written,
-        status_message=status_msg,
-        is_waiting=False,
-    )
+    except Exception as e:
+        try:
+            print(RED + f"❌ Lỗi hiển thị: {e}")
+        except Exception:
+            pass
 
 
 def hide_saved_coordinate():
@@ -777,7 +791,6 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                         return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
 
                 # 4.2 Kiểm tra nếu kết quả đang hiển thị:
-                just_hid_overlay = False
                 if result_overlay.is_visible():
                     if result_overlay.is_point_in_badge(cursor_x, cursor_y):
                         # Bắt đầu kéo thả form mảnh mai! Không ẩn kết quả
@@ -792,14 +805,12 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                     else:
                         # Nhấp ra NGOÀI form đáp án: Ẩn ngay lập tức (0ms)
                         hide_saved_coordinate()
-                        just_hid_overlay = True
-                        if pending_left_show_timer:
-                            try:
-                                pending_left_show_timer.cancel()
-                            except Exception:
-                                pass
-                            pending_left_show_timer = None
+                        # Reset để cú nhấp ẩn không làm lệch số lần nhấp đúp sau
+                        left_click_count = 0
+                        last_left_time = 0.0
+                        return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
 
+                # 4.3 Khi kết quả đang ẩn: Tính số lần nhấp chuột
                 if (now - last_left_time) <= dbl_interval:
                     left_click_count += 1
                 else:
@@ -808,45 +819,15 @@ def low_level_mouse_handler(nCode, wParam, lParam):
 
                 # Chuột trái x4 -> Bắt đầu tự gõ
                 if left_click_count >= 4:
-                    if pending_left_show_timer:
-                        try:
-                            pending_left_show_timer.cancel()
-                        except Exception:
-                            pass
-                        pending_left_show_timer = None
-
                     left_click_count = 0
                     last_left_time = 0.0
                     start_auto_typing()
 
-                # Chuột trái x2 -> Hiện kết quả (chỉ hiện khi không phải vừa ấn ẩn)
+                # Chuột trái x2 -> HIỂN THỊ KẾT QUẢ NGAY LẬP TỨC (0ms, KHÔNG CHỜ TIMER!)
                 elif left_click_count == 2:
-                    if just_hid_overlay:
-                        # Vừa ấn ẩn xong, giữ nguyên trạng thái ẩn
-                        pass
-                    else:
-                        wait_for_quad = max(0.20, dbl_interval + 0.05)
-
-                        def _execute_show_if_not_quad():
-                            global left_click_count, pending_left_show_timer, last_left_time
-                            with mouse_lock:
-                                if left_click_count == 2:
-                                    left_click_count = 0
-                                    last_left_time = 0.0
-                                    pending_left_show_timer = None
-                                    threading.Thread(target=mark_saved_coordinate, daemon=True).start()
-
-                        if pending_left_show_timer:
-                            try:
-                                pending_left_show_timer.cancel()
-                            except Exception:
-                                pass
-                            pending_left_show_timer = threading.Timer(wait_for_quad, _execute_show_if_not_quad)
-                            pending_left_show_timer.daemon = True
-                            pending_left_show_timer.start()
+                    threading.Thread(target=mark_saved_coordinate, daemon=True).start()
 
                 elif left_click_count == 1:
-                    # Đã ẩn ngay lập tức ở trên (0ms)
                     pass
 
     try:

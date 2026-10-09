@@ -6,7 +6,8 @@ Overlay Rendering Engine for Tool v3.2
 - Hỗ trợ KÉO THẢ (Drag and Drop) mượt mà đến mọi vị trí trên màn hình
 - TỰ ĐỘNG GHI NHỚ VỊ TRÍ lần cuối khi thả để các lần sau mở đúng vị trí đó
 - Vị trí mặc định: Tại khu vực đồng hồ hệ thống trên Taskbar
-- Màu chữ #CDD5E2 tiệp màu đồng hồ, phông chữ Times New Roman thon gọn kiểu Word
+- Màu chữ tự động thích ứng với màu nền đồng hồ (nền sáng dùng xám đậm #1F1F1F, nền tối dùng #CDD5E2)
+- Luôn hiển thị trên cùng (HWND_TOPMOST) không bị Taskbar hay SEB che
 """
 
 import os
@@ -24,9 +25,12 @@ WS_EX_LAYERED = 0x00080000
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOPMOST = 0x00000008
 WS_EX_TOOLWINDOW = 0x00000080
+HWND_TOPMOST = -1
 SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
 SWP_NOZORDER = 0x0004
 SWP_NOACTIVATE = 0x0010
+SWP_SHOWWINDOW = 0x0040
 
 
 class ResultOverlayV32:
@@ -65,7 +69,7 @@ class ResultOverlayV32:
         """Kiểm tra xem toạ độ chuột có nằm trong vùng của form mảnh mai (có thêm vùng đệm) hay không."""
         if not getattr(self, "_is_showing", False) or not self._q_badge_win:
             return False
-        margin = 8  # 8px đệm xung quanh giúp người dùng dễ dàng bấm trúng để kéo thả
+        margin = 10  # 10px đệm xung quanh giúp người dùng dễ dàng bấm trúng để kéo thả
         x1 = self._badge_x - margin
         y1 = self._badge_y - margin
         x2 = self._badge_x + self._badge_w + margin
@@ -83,8 +87,8 @@ class ResultOverlayV32:
         if self._q_hwnd:
             try:
                 ctypes.windll.user32.SetWindowPos(
-                    self._q_hwnd, 0, int(x), int(y), 0, 0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+                    self._q_hwnd, HWND_TOPMOST, int(x), int(y), 0, 0,
+                    SWP_NOSIZE | SWP_NOACTIVATE
                 )
             except Exception:
                 pass
@@ -205,7 +209,6 @@ class ResultOverlayV32:
             return
 
         num_opacity = int(cfg.get("number_opacity", 100))
-        number_color = str(cfg.get("number_fg", "#CDD5E2")).strip() or "#CDD5E2"
         font_family = str(cfg.get("number_font_family", "Times New Roman")).strip() or "Times New Roman"
 
         try:
@@ -230,33 +233,28 @@ class ResultOverlayV32:
             q_canvas = tk.Canvas(q_win, bg=bg_key, highlightthickness=0)
             q_canvas.pack(fill="both", expand=True)
 
-            # Chữ thon gọn chuẩn kiểu Word (Times New Roman), màu xám tiệp màu đồng hồ hệ thống #CDD5E2
-            text_item = q_canvas.create_text(
+            # ĐO ĐẠC KÍCH THƯỚC CHỮ
+            temp_item = q_canvas.create_text(
                 0, 0,
                 text=badge_text,
-                fill=number_color,
                 font=(font_family, font_size),
                 justify="center",
                 anchor="nw"
             )
-
             q_win.update_idletasks()
-            bbox = q_canvas.bbox(text_item)
+            bbox = q_canvas.bbox(temp_item)
             if bbox:
                 text_w = (bbox[2] - bbox[0])
                 text_h = (bbox[3] - bbox[1])
             else:
                 text_w = 40
                 text_h = 20
+            q_canvas.delete(temp_item)
 
             pad_x = 6
             pad_y = 2
             w = max(38, text_w + pad_x * 2)
             h = max(20, text_h + pad_y * 2)
-
-            # Căn giữa chữ trong canvas
-            q_canvas.coords(text_item, w // 2, h // 2)
-            q_canvas.itemconfig(text_item, anchor="center")
 
             # KIỂM TRA VỊ TRÍ ĐÃ LƯU TỪ LẦN THẢ GẦN NHẤT
             saved_x = cfg.get("badge_pos_x")
@@ -279,6 +277,35 @@ class ResultOverlayV32:
                     y = screen_h - h - 6
 
                 x = max(10, screen_w - w - clock_right_margin)
+
+            # TỰ ĐỘNG THÍCH ỨNG MÀU CHỮ THEO NỀN MÀN HÌNH TẠI VỊ TRÍ HIỂN THỊ
+            # Nếu nền sáng (như Windows Light Theme Taskbar): dùng xám đậm #1F1F1F
+            # Nếu nền tối (như Windows Dark Theme Taskbar): dùng xám sáng #CDD5E2
+            chosen_fg = str(cfg.get("number_fg", "")).strip()
+            if not chosen_fg or chosen_fg.upper() in ["#CDD5E2", "#CCCCCC", "#A0A0A0", "#111111", "#1F1F1F"]:
+                try:
+                    hdc = ctypes.windll.user32.GetDC(0)
+                    pixel = ctypes.windll.gdi32.GetPixel(hdc, int(x + w // 2), int(y + h // 2))
+                    ctypes.windll.user32.ReleaseDC(0, hdc)
+                    if pixel != -1:
+                        pr = pixel & 0xFF
+                        pg = (pixel >> 8) & 0xFF
+                        pb = (pixel >> 16) & 0xFF
+                        lum = 0.299 * pr + 0.587 * pg + 0.114 * pb
+                        chosen_fg = "#1F1F1F" if lum > 150 else "#CDD5E2"
+                    else:
+                        chosen_fg = "#1F1F1F"
+                except Exception:
+                    chosen_fg = "#1F1F1F"
+
+            text_item = q_canvas.create_text(
+                w // 2, h // 2,
+                text=badge_text,
+                fill=chosen_fg,
+                font=(font_family, font_size),
+                justify="center",
+                anchor="center"
+            )
 
             self._badge_x = x
             self._badge_y = y
@@ -323,6 +350,16 @@ class ResultOverlayV32:
 
             alpha_byte = max(1, min(255, int(round(255 * alpha_ratio))))
             user32.SetLayeredWindowAttributes(top_q_hwnd, 0x00FF00FF, alpha_byte, 1 | 2)
+
+            # Cực kỳ quan trọng: Luôn đưa lên TOPMOST cấp Win32 và hiển thị ngay
+            user32.SetWindowPos(
+                top_q_hwnd, HWND_TOPMOST, int(x), int(y), int(w), int(h),
+                SWP_NOACTIVATE | SWP_SHOWWINDOW
+            )
+            user32.ShowWindow(top_q_hwnd, 5)  # SW_SHOW = 5
+
+            q_win.deiconify()
+            q_win.lift()
 
             self._q_badge_win = q_win
             self._q_hwnd = top_q_hwnd
