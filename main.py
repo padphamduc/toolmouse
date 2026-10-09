@@ -45,10 +45,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "model_name": "Gemini 3.5 Flash-Lite",
     "double_click_interval": 0.35,
     "load_cursor_duration": 1.0,
-    "number_opacity": 4,
-    "text_opacity": 4,
+    "number_opacity": 85,
+    "text_opacity": 85,
     "text_font_size": 11,
     "text_fg": "#111111",
+    "number_fg": "#A0A0A0",
 }
 CONFIG: Dict[str, Any] = dict(DEFAULT_CONFIG)
 
@@ -252,9 +253,9 @@ def show_banner():
             "Phím F2         : Mở cửa sổ Cài đặt cấu hình (Setup)",
             "Phím ESC        : Thoát khỏi tool (khi cửa sổ đang mở)",
             "----------------------------------------------------------------------------",
-            f"Độ mờ số câu   : {num_op}% (Đen mờ, không lộ)",
-            f"Load chuột     : {cursor_dur}s • Model: {model_name}",
-            f"Khóa API       : {api_status}",
+            "Vị trí đáp án   : Ngay cạnh phần giờ hệ thống (Chữ xám #A0A0A0 tiệp màu)",
+            f"Load chuột      : {cursor_dur}s • Model: {model_name}",
+            f"Khóa API        : {api_status}",
         ],
         color=PINK,
         width=78,

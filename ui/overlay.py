@@ -262,37 +262,46 @@ class ResultOverlayV32:
                 pass
 
         # ----------------------------------------------------------------------
-        # 2. HIỂN THỊ SỐ CÂU KÈM ĐÁP ÁN TRẮC NGHIỆM TẠI VỊ TRÍ SỐ CÂU (TOOL V3.2)
-        # Ví dụ: '99 A', '100 C', hoặc '99 A, C'. Dùng chung màu đen mờ, cỡ chữ, vị trí số câu
+        # 2. HIỂN THỊ SỐ CÂU KÈM ĐÁP ÁN TRẮC NGHIỆM TẠI PHẦN GIỜ (TOOL V3.2)
+        # Nằm ở góc dưới bên phải, ngay phần hiển thị giờ hệ thống của Taskbar / SEB
+        # Màu chữ xám (#A0A0A0) đồng bộ với màu chữ của phần giờ hệ thống
         # KHÔNG vẽ dấu chấm đỏ.
         # ----------------------------------------------------------------------
         badge_text = str(mc_badge_text).strip()
-        num_opacity = int(cfg.get("number_opacity", 4))
+        num_opacity = int(cfg.get("number_opacity", 85))
+        number_color = str(cfg.get("number_fg", "#A0A0A0")).strip() or "#A0A0A0"
 
-        if badge_text and num_opacity > 0:
+        if badge_text:
             try:
                 lines = [line.strip() for line in badge_text.split("\n") if line.strip()]
                 line_count = len(lines)
                 max_line_len = max(len(l) for l in lines) if lines else 4
 
-                font_size = 22 if line_count <= 2 else 18
-                pad_x = 18
-                pad_y = 10
-                w = max(80, max_line_len * 18 + pad_x * 2)
-                h = max(46, line_count * (font_size + 10) + pad_y * 2)
+                # Kích cỡ chữ và padding nhỏ gọn đồng bộ với cỡ chữ đồng hồ Windows / SEB
+                font_size = 11 if line_count <= 2 else 10
+                pad_x = 8
+                pad_y = 2
+                w = max(48, max_line_len * 9 + pad_x * 2)
+                h = max(24, line_count * (font_size + 4) + pad_y * 2)
 
-                x = screen_w - w - 25
-                if self._text_win:
-                    y = max(10, text_y_top - h - 8)
+                # Căn dọc ngay giữa dải Taskbar / phần giờ dưới cùng bên phải
+                tb_h = max(36, screen_h - work_b) if screen_h > work_b else 40
+                clock_right_margin = 75  # Nằm ngay sát bên trái phần giờ hệ thống
+
+                if screen_h > work_b:
+                    y = work_b + (tb_h - h) // 2
                 else:
-                    y = screen_h - h - 30
+                    y = screen_h - h - 6
+
+                x = max(10, screen_w - w - clock_right_margin)
 
                 q_win = tk.Toplevel(self._root)
                 q_win.overrideredirect(True)
                 q_win.attributes("-topmost", True)
                 q_win.lift()
 
-                alpha_ratio = max(0.01, min(1.0, float(num_opacity) / 100.0))
+                # Độ mờ hiển thị tiệp màu với màu chữ phần giờ
+                alpha_ratio = max(0.65, min(1.0, float(num_opacity) / 100.0))
                 q_win.attributes("-alpha", alpha_ratio)
 
                 bg_key = "#FF00FF"
@@ -305,7 +314,7 @@ class ResultOverlayV32:
                 text_item = q_canvas.create_text(
                     w // 2, h // 2,
                     text=badge_text,
-                    fill="#000000",
+                    fill=number_color,
                     font=("Segoe UI", font_size, "bold"),
                     justify="center"
                 )
@@ -313,16 +322,16 @@ class ResultOverlayV32:
                 q_win.update_idletasks()
                 bbox = q_canvas.bbox(text_item)
                 if bbox:
-                    meas_w = (bbox[2] - bbox[0]) + 24
-                    meas_h = (bbox[3] - bbox[1]) + 16
+                    meas_w = (bbox[2] - bbox[0]) + 12
+                    meas_h = (bbox[3] - bbox[1]) + 6
                     if meas_w > w or meas_h > h:
                         w = max(w, meas_w)
                         h = max(h, meas_h)
-                        x = screen_w - w - 25
-                        if self._text_win:
-                            y = max(10, text_y_top - h - 8)
+                        if screen_h > work_b:
+                            y = work_b + (tb_h - h) // 2
                         else:
-                            y = screen_h - h - 30
+                            y = screen_h - h - 6
+                        x = max(10, screen_w - w - clock_right_margin)
 
                 q_win.geometry(f"{w}x{h}+{x}+{y}")
                 q_win.update_idletasks()

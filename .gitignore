@@ -13,6 +13,7 @@ dist/
 *.egg-info/
 .installed.cfg
 *.egg
+*.zip
 
 # Virtual environments
 venv/
