@@ -785,9 +785,8 @@ def on_update_found(update_info):
 
 
 def on_sheets_sync_success(keys):
-    """Gọi lại khi tải thành công khóa từ Google Sheets ở luồng nền."""
-    masked = mask_key(keys.get("gemini", ""))
-    print(GREEN + f"\n[Google Sheets] Đã đồng bộ khóa API Gemini mới nhất ({masked}) thành công!")
+    """Đồng bộ ngầm khóa từ Google Sheets (không in thông báo để giữ màn hình gọn gàng)."""
+    pass
 
 
 def main():
