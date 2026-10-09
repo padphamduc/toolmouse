@@ -62,9 +62,9 @@ class ResultOverlayV32:
         self.last_show_time = 0.0
 
         # Quản lý chu kỳ độ mờ
-        self._current_opacity = 100
-        self._opacity_index = len(OPACITY_STEPS) - 1
-        self._opacity_direction = -1
+        self._current_opacity = 20
+        self._opacity_index = OPACITY_STEPS.index(20) if 20 in OPACITY_STEPS else 5
+        self._opacity_direction = 1
         self._colorkey_hex = 0x00FFFFFF
         self._last_cycle_time = 0.0
 
@@ -168,6 +168,39 @@ class ResultOverlayV32:
                 pass
 
         return new_op
+
+    def reset_to_default(self):
+        """Đặt vị trí về mặc định (khu vực đồng hồ) và độ mờ về 20%."""
+        self._current_opacity = 20
+        if 20 in OPACITY_STEPS:
+            self._opacity_index = OPACITY_STEPS.index(20)
+            self._opacity_direction = 1
+        self.set_opacity(20)
+
+        if self._root:
+            def _reset_pos():
+                try:
+                    screen_w = max(self._root.winfo_screenwidth(), ctypes.windll.user32.GetSystemMetrics(0))
+                    screen_h = max(self._root.winfo_screenheight(), ctypes.windll.user32.GetSystemMetrics(1))
+                    work_b = screen_h
+                    if os.name == "nt":
+                        rect = wintypes.RECT()
+                        SPI_GETWORKAREA = 0x0030
+                        if ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0):
+                            work_b = int(rect.bottom)
+                    w = getattr(self, "_badge_w", 40)
+                    h = getattr(self, "_badge_h", 20)
+                    tb_h = max(36, screen_h - work_b) if screen_h > work_b else 40
+                    clock_right_margin = 75
+                    if screen_h > work_b:
+                        def_y = work_b + (tb_h - h) // 2
+                    else:
+                        def_y = screen_h - h - 6
+                    def_x = max(10, screen_w - w - clock_right_margin)
+                    self.move_badge(def_x, def_y)
+                except Exception:
+                    pass
+            self._root.after(0, _reset_pos)
 
     def show_results(
         self,
@@ -370,7 +403,7 @@ class ResultOverlayV32:
             self._colorkey_hex = colorkey_hex
 
             # 6. KHỞI TẠO ĐỘ MỜ (OPACITY) TỪ CẤU HÌNH
-            saved_op = int(cfg.get("number_opacity", 100))
+            saved_op = int(cfg.get("number_opacity", 20))
             self._current_opacity = max(1, min(100, saved_op))
             if self._current_opacity in OPACITY_STEPS:
                 self._opacity_index = OPACITY_STEPS.index(self._current_opacity)

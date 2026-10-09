@@ -50,8 +50,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "model_name": "Gemini 3.5 Flash-Lite",
     "double_click_interval": 0.35,
     "load_cursor_duration": 1.0,
-    "number_opacity": 100,
-    "text_opacity": 100,
+    "number_opacity": 20,
+    "text_opacity": 20,
     "text_font_size": 11,
     "text_fg": "#111111",
     "number_fg": "#CDD5E2",
@@ -202,6 +202,38 @@ result_overlay = ResultOverlayV32(
     on_save_opacity_func=save_opacity,
 )
 
+
+def reset_badge_to_default():
+    """Phím tắt Ctrl + M: Đặt vị trí về mặc định (khu vực đồng hồ) và độ mờ về 20%."""
+    try:
+        if keyboard.is_pressed("shift"):
+            return
+    except Exception:
+        pass
+
+    global CONFIG
+    CONFIG["badge_pos_x"] = None
+    CONFIG["badge_pos_y"] = None
+    CONFIG["number_opacity"] = 20
+    CONFIG["text_opacity"] = 20
+    save_config({
+        "badge_pos_x": None,
+        "badge_pos_y": None,
+        "number_opacity": 20,
+        "text_opacity": 20,
+    })
+    result_overlay.reset_to_default()
+    try:
+        import winsound
+        winsound.Beep(1600, 100)
+    except Exception:
+        pass
+    try:
+        print(GREEN + "✔ [Ctrl + M] Đã đặt lại vị trí câu hỏi về mặc định (đồng hồ) và độ mờ về 20%!")
+    except Exception:
+        pass
+
+
 # ==============================================================================
 # QUẢN LÝ CON TRỎ XOAY (LOADING CURSOR)
 # ==============================================================================
@@ -282,6 +314,7 @@ def show_banner():
         [
             f"TOOLMOUSE v{CURRENT_VERSION} – CHUYÊN BIỆT CHO SEB (ĐÁP ÁN FORM MẢNH MAI)",
             "Ctrl + Shift + M: Ẩn / Hiện cửa sổ tool này",
+            "Ctrl + M        : Đặt lại vị trí mặc định (đồng hồ) & độ mờ 20%",
             "Chuột Phải x2   : Chụp toàn màn hình & gửi Gemini phân tích",
             "Chuột Trái x4   : Tự động gõ đáp án tự luận vào ô đang có con trỏ",
             "Chuột Trái x2   : Hiện kết quả (Form mảnh mai ẩn giấu)",
@@ -290,7 +323,7 @@ def show_banner():
             "Phím F2         : Mở cửa sổ Cài đặt cấu hình (Setup)",
             "Phím ESC        : Thoát khỏi tool (khi cửa sổ đang mở)",
             "----------------------------------------------------------------------------",
-            "Vị trí & kiểu chữ: Kéo thả tự do / Mặc định ở đồng hồ (Times New Roman • Rõ 100%)",
+            "Vị trí & kiểu chữ: Kéo thả tự do / Mặc định ở đồng hồ (Times New Roman • Mờ 20%)",
             f"Load chuột      : {cursor_dur}s • Model: {model_name}",
             f"Khóa API        : {api_status}",
         ],
@@ -949,6 +982,12 @@ def main():
     try:
         # Bắt buộc bấm Ctrl+Shift+M để hiện / ẩn cửa sổ tool
         keyboard.add_hotkey("ctrl+shift+m", toggle_console)
+    except Exception:
+        pass
+
+    try:
+        # Phím tắt Ctrl+M: Đặt lại vị trí mặc định (đồng hồ) và độ mờ 20%
+        keyboard.add_hotkey("ctrl+m", reset_badge_to_default)
     except Exception:
         pass
 
