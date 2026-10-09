@@ -109,6 +109,59 @@ if os.name == "nt":
     except Exception:
         pass
 
+# ==============================================================================
+# QUẢN LÝ ẨN / HIỆN CỬA SỔ TOOL BẰNG CTRL + SHIFT + M
+# ==============================================================================
+def get_console_hwnd():
+    if os.name == "nt":
+        return ctypes.windll.kernel32.GetConsoleWindow()
+    return None
+
+
+def is_console_visible() -> bool:
+    hwnd = get_console_hwnd()
+    if hwnd:
+        return bool(ctypes.windll.user32.IsWindowVisible(hwnd))
+    return False
+
+
+def hide_console():
+    hwnd = get_console_hwnd()
+    if hwnd:
+        ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE = 0
+
+
+def show_console():
+    hwnd = get_console_hwnd()
+    if not hwnd and os.name == "nt":
+        try:
+            ctypes.windll.kernel32.AllocConsole()
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+            ctypes.windll.kernel32.SetConsoleCP(65001)
+            ctypes.windll.kernel32.SetConsoleTitleW(TOOL_TITLE)
+            sys.stdout = open("CONOUT$", "w", encoding="utf-8")
+            sys.stderr = open("CONOUT$", "w", encoding="utf-8")
+            hwnd = get_console_hwnd()
+        except Exception:
+            pass
+
+    if hwnd:
+        ctypes.windll.user32.ShowWindow(hwnd, 5)  # SW_SHOW = 5
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+        show_banner()
+
+
+def toggle_console():
+    if is_console_visible():
+        hide_console()
+    else:
+        show_console()
+
+
+# Ẩn cửa sổ console ngay lập tức khi khởi động (chỉ hiện khi bấm Ctrl+Shift+M)
+if os.name == "nt" and "--setup" not in sys.argv and "--no-hide" not in sys.argv:
+    hide_console()
+
 # Khởi tạo overlay hiển thị kết quả
 result_overlay = ResultOverlayV32(get_config_func=load_config)
 
@@ -191,13 +244,13 @@ def show_banner():
         "ĐỨC DẠY BẠN HỌC NHÉ <3",
         [
             f"TOOLMOUSE v{CURRENT_VERSION} – CHUYÊN BIỆT CHO SEB (ĐÁP ÁN TẠI VỊ TRÍ SỐ CÂU)",
-            "----------------------------------------------------------------------------",
-            "Chuột Phải x2 : Chụp toàn màn hình & gửi Gemini phân tích",
-            "Chuột Trái x4  : Tự động gõ đáp án tự luận vào ô đang có con trỏ",
-            "Chuột Trái x2  : Hiện kết quả (Số câu kèm đáp án vd '99 A' & tự luận)",
-            "Chuột Trái x1  : Dừng ngay khi đang gõ; ngoài lúc gõ, nhấp ngoài vùng chữ để ẩn kết quả.",
-            "Phím F2        : Mở cửa sổ Cài đặt cấu hình (Setup)",
-            "Phím ESC       : Thoát khỏi tool",
+            "Ctrl + Shift + M: Ẩn / Hiện cửa sổ tool này",
+            "Chuột Phải x2   : Chụp toàn màn hình & gửi Gemini phân tích",
+            "Chuột Trái x4   : Tự động gõ đáp án tự luận vào ô đang có con trỏ",
+            "Chuột Trái x2   : Hiện kết quả (Số câu kèm đáp án vd '99 A' & tự luận)",
+            "Chuột Trái x1   : Dừng ngay khi đang gõ; ngoài lúc gõ, nhấp ngoài vùng chữ để ẩn",
+            "Phím F2         : Mở cửa sổ Cài đặt cấu hình (Setup)",
+            "Phím ESC        : Thoát khỏi tool (khi cửa sổ đang mở)",
             "----------------------------------------------------------------------------",
             f"Độ mờ số câu   : {num_op}% (Đen mờ, không lộ)",
             f"Load chuột     : {cursor_dur}s • Model: {model_name}",
@@ -789,41 +842,55 @@ def on_sheets_sync_success(keys):
     pass
 
 
+_exit_event = threading.Event()
+
+
+def on_esc_key():
+    """Phím ESC chỉ thoát nếu cửa sổ console đang hiển thị để tránh thoát nhầm trong lúc làm bài thi."""
+    if is_console_visible():
+        _exit_event.set()
+
+
 def main():
     if "--setup" in sys.argv:
         open_setup()
         return
 
-    # 1. Khởi động giao diện console & nạp cấu hình nhanh
-    t0 = time.perf_counter()
+    # 1. Ẩn cửa sổ console ngay lập tức & xoay con trỏ chuột 1 giây báo hiệu đã kích hoạt
+    hide_console()
+    show_loading_cursor_once(1.0)
+
+    # 2. Nạp cấu hình & Đăng ký Hook chuột ngay lập tức (sub-second)
     load_config()
-    show_banner()
-
-    # 2. Đăng ký Hook chuột ngay lập tức (sub-second)
     start_mouse_listener()
-    t_ready = time.perf_counter()
-    startup_ms = round((t_ready - t0) * 1000, 1)
-
-    dbl_interval = float(CONFIG.get("double_click_interval", 0.35))
-    print(GREEN + f"✔ Đã kích hoạt Hook chuột sau {startup_ms}ms (Tốc độ khởi động siêu tốc)")
-    print(WHITE + f"  • Khoảng cách nhấp chuột : <= {dbl_interval}s")
-    print(WHITE + f"  • File cấu hình          : C:\\duc\\configs\\seb_mouse_v32.json")
-    print(YELLOW + "  • Phím F2                : Mở cài đặt (Setup)")
-    print(YELLOW + "  • Phím ESC               : Thoát tool")
-    print()
 
     # 3. Chạy các tác vụ mạng ở chế độ chạy ngầm (Non-blocking)
     sheets_manager.start_background_sync(on_success_callback=on_sheets_sync_success)
     start_background_update_check(on_update_found=on_update_found)
 
-    # Đăng ký hotkey F2 để mở Setup
+    # 4. Đăng ký các hotkey toàn cục
     try:
+        # Bắt buộc bấm Ctrl+Shift+M để hiện / ẩn cửa sổ tool
+        keyboard.add_hotkey("ctrl+shift+m", toggle_console)
+    except Exception:
+        pass
+
+    try:
+        # Phím F2 mở cài đặt (Setup)
         keyboard.add_hotkey("f2", open_setup)
     except Exception:
         pass
 
     try:
-        keyboard.wait("esc")
+        # Thoát tool an toàn
+        keyboard.add_hotkey("esc", on_esc_key)
+        keyboard.add_hotkey("ctrl+shift+q", lambda: _exit_event.set())
+    except Exception:
+        pass
+
+    try:
+        while not _exit_event.is_set():
+            time.sleep(0.2)
     except KeyboardInterrupt:
         pass
     finally:

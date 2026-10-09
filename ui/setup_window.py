@@ -270,12 +270,13 @@ class SetupDialog:
         tips_frame.pack(fill="x", pady=(4, 0))
         tk.Label(
             tips_frame,
-            text="🖱 HƯỚNG DẪN THAO TÁC CHUỘT TOOL V3.2:\n"
+            text="🖱 HƯỚNG DẪN THAO TÁC TOOL V3.2:\n"
+                 "• Ctrl + Shift + M: Ẩn / Hiện cửa sổ tool\n"
                  "• Chuột Phải x2 : Chụp màn hình & gửi Gemini giải đề\n"
                  "• Chuột Trái x4 : Tự động gõ đáp án tự luận vào ô đang trỏ chuột\n"
                  "• Chuột Trái x2 : Hiện kết quả (Số câu kèm đáp án vd 99 A & tự luận)\n"
                  "• Chuột Trái x1 : Dừng ngay khi đang gõ; ngoài lúc gõ, nhấp ngoài vùng chữ để ẩn kết quả\n"
-                 "• Phím ESC      : Thoát tool",
+                 "• Phím ESC      : Thoát tool (khi cửa sổ đang mở)",
             bg=CARD,
             fg="#D1D5DB",
             justify="left",

@@ -32,12 +32,14 @@
 
 | Thao tác | Chức năng | Chi tiết |
 | :--- | :--- | :--- |
+| **Kích hoạt app** | 🔄 Xoay chuột 1s & Chạy ngầm | Khi mở app, con trỏ chuột xoay 1 giây báo hiệu đã sẵn sàng; cửa sổ tool hoàn toàn ẩn (tàng hình). |
+| **Ctrl + Shift + M** | 🖥 **Ẩn / Hiện cửa sổ Tool** | Bắt buộc bấm tổ hợp phím này để hiển thị hoặc ẩn cửa sổ điều khiển của tool. |
 | **Chuột Phải x2** | 📸 Chụp màn hình & Giải đề | Tự động chụp toàn màn hình bằng GDI BitBlt đa tầng (vượt bộ lọc WDA DWM của SEB) và gửi AI phân tích. |
 | **Chuột Trái x2** | 👁 Hiện kết quả | Hiển thị số câu kèm đáp án (`99 A` / `99 A, C`) và nội dung tự luận ở góc dưới bên phải. |
 | **Chuột Trái x1** | ⏹ **Ẩn ngay lập tức / Dừng gõ** | **Nếu đang gõ:** dừng gõ khẩn cấp ngay tức thì.<br>**Nếu đang hiện kết quả:** ẩn biến mất ngay lập tức (0ms). |
 | **Chuột Trái x4** | ⌨ Tự động gõ đáp án | Gõ trực tiếp chữ tự luận vào ô đang đặt con trỏ chuột. |
 | **Phím F2** | ⚙ Mở bảng Cài đặt (Setup) | Tùy chỉnh Model AI, độ mờ đáp án, thời gian nhấp chuột, kiểm tra kết nối API. |
-| **Phím ESC** | 🚪 Thoát ứng dụng | Tắt tool và dọn dẹp tài nguyên. |
+| **Phím ESC** | 🚪 Thoát ứng dụng | Tắt tool (khi cửa sổ tool đang mở). |
 
 ---
 
