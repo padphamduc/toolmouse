@@ -2,12 +2,13 @@
 """
 Overlay Rendering Engine for Tool v3.2
 - Form mảnh mai ẩn giấu (như '1abd', '1 A B D', '99 A')
-- ĐÃ XÓA HOÀN TOÀN hộp chữ to theo yêu cầu người dùng
+- SỬ DỤNG CƠ CHẾ UPDATE LAYERED WINDOW 32-BIT ARGB CHUẨN XÁC
+- XÓA BỎ 100% VIỀN HỒNG / CHROMA KEY: Không dùng màu nền hồng, không bị lem màu viền chữ
+- Trong suốt hoàn toàn từng pixel (Per-pixel Alpha), chữ khử răng cưa mượt mà không tì vết
 - Hỗ trợ KÉO THẢ (Drag and Drop) mượt mà đến mọi vị trí trên màn hình
 - TỰ ĐỘNG GHI NHỚ VỊ TRÍ lần cuối khi thả để các lần sau mở đúng vị trí đó
 - Vị trí mặc định: Tại khu vực đồng hồ hệ thống trên Taskbar
 - Màu chữ tự động thích ứng với màu nền đồng hồ (nền sáng dùng xám đậm #1F1F1F, nền tối dùng #CDD5E2)
-- Luôn hiển thị trên cùng (HWND_TOPMOST) không bị Taskbar hay SEB che
 """
 
 import os
@@ -18,6 +19,7 @@ from ctypes import wintypes
 import threading
 import tkinter as tk
 from typing import List, Dict, Any, Tuple, Optional
+from PIL import Image, ImageDraw, ImageFont
 
 GWL_EXSTYLE = -20
 WS_EX_TRANSPARENT = 0x00000020
@@ -31,6 +33,47 @@ SWP_NOMOVE = 0x0002
 SWP_NOZORDER = 0x0004
 SWP_NOACTIVATE = 0x0010
 SWP_SHOWWINDOW = 0x0040
+ULW_ALPHA = 2
+
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [
+        ("biSize", wintypes.DWORD),
+        ("biWidth", wintypes.LONG),
+        ("biHeight", wintypes.LONG),
+        ("biPlanes", wintypes.WORD),
+        ("biBitCount", wintypes.WORD),
+        ("biCompression", wintypes.DWORD),
+        ("biSizeImage", wintypes.DWORD),
+        ("biXPelsPerMeter", wintypes.LONG),
+        ("biYPelsPerMeter", wintypes.LONG),
+        ("biClrUsed", wintypes.DWORD),
+        ("biClrImportant", wintypes.DWORD),
+    ]
+
+
+class BLENDFUNCTION(ctypes.Structure):
+    _fields_ = [
+        ("BlendOp", ctypes.c_ubyte),
+        ("BlendFlags", ctypes.c_ubyte),
+        ("SourceConstantAlpha", ctypes.c_ubyte),
+        ("AlphaFormat", ctypes.c_ubyte),
+    ]
+
+
+def get_pil_font(size: int = 12):
+    font_paths = [
+        r"C:\Windows\Fonts\times.ttf",
+        r"C:\Windows\Fonts\segoeui.ttf",
+        r"C:\Windows\Fonts\arial.ttf",
+    ]
+    for p in font_paths:
+        if os.path.exists(p):
+            try:
+                return ImageFont.truetype(p, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
 
 
 class ResultOverlayV32:
@@ -182,7 +225,7 @@ class ResultOverlayV32:
                 pass
 
         # ----------------------------------------------------------------------
-        # XÂY DỰNG NỘI DUNG FORM MẢNH MAI ẨN GIẤU (ĐÃ XÓA HOÀN TOÀN HỘP TO _text_win)
+        # XÂY DỰNG NỘI DUNG FORM MẢNH MAI ẨN GIẤU
         # ----------------------------------------------------------------------
         badge_text = ""
         if is_waiting:
@@ -206,161 +249,155 @@ class ResultOverlayV32:
             badge_text = str(status_message).strip()
 
         if not badge_text:
-            return
+            badge_text = "Chưa có kết quả"
 
-        num_opacity = int(cfg.get("number_opacity", 100))
-        font_family = str(cfg.get("number_font_family", "Times New Roman")).strip() or "Times New Roman"
+        lines = [line.strip() for line in badge_text.split("\n") if line.strip()]
+        line_count = len(lines)
+        font_size = 12 if line_count <= 2 else 11
+        pil_font = get_pil_font(font_size)
 
         try:
-            lines = [line.strip() for line in badge_text.split("\n") if line.strip()]
-            line_count = len(lines)
+            # 1. ĐO ĐẠC KÍCH THƯỚC CHỮ CHÍNH XÁC BẰNG PIL
+            dummy_im = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+            dummy_draw = ImageDraw.Draw(dummy_im)
 
-            # Dáng chữ thon gọn thanh thoát chuẩn văn bản Word (Times New Roman)
-            font_size = 11 if line_count <= 2 else 10
+            max_line_w = 0
+            line_heights = []
+            for l in lines:
+                bb = dummy_draw.textbbox((0, 0), l, font=pil_font)
+                lw = bb[2] - bb[0]
+                lh = bb[3] - bb[1]
+                if lw > max_line_w:
+                    max_line_w = lw
+                line_heights.append(lh)
 
-            q_win = tk.Toplevel(self._root)
-            q_win.overrideredirect(True)
-            q_win.attributes("-topmost", True)
-            q_win.lift()
+            total_h = sum(line_heights) + (line_count - 1) * 3
+            pad_x = 8
+            pad_y = 4
+            w = max(38, max_line_w + pad_x * 2)
+            h = max(22, total_h + pad_y * 2)
 
-            alpha_ratio = max(0.01, min(1.0, float(num_opacity) / 100.0))
-            q_win.attributes("-alpha", alpha_ratio)
-
-            bg_key = "#FF00FF"
-            q_win.configure(bg=bg_key)
-            q_win.attributes("-transparentcolor", bg_key)
-
-            q_canvas = tk.Canvas(q_win, bg=bg_key, highlightthickness=0)
-            q_canvas.pack(fill="both", expand=True)
-
-            # ĐO ĐẠC KÍCH THƯỚC CHỮ
-            temp_item = q_canvas.create_text(
-                0, 0,
-                text=badge_text,
-                font=(font_family, font_size),
-                justify="center",
-                anchor="nw"
-            )
-            q_win.update_idletasks()
-            bbox = q_canvas.bbox(temp_item)
-            if bbox:
-                text_w = (bbox[2] - bbox[0])
-                text_h = (bbox[3] - bbox[1])
-            else:
-                text_w = 40
-                text_h = 20
-            q_canvas.delete(temp_item)
-
-            pad_x = 6
-            pad_y = 2
-            w = max(38, text_w + pad_x * 2)
-            h = max(20, text_h + pad_y * 2)
-
-            # KIỂM TRA VỊ TRÍ ĐÃ LƯU TỪ LẦN THẢ GẦN NHẤT
+            # 2. XÁC ĐỊNH VỊ TRÍ HIỂN THỊ (ĐÃ LƯU HOẶC MẶC ĐỊNH KHU VỰC ĐỒNG HỒ)
             saved_x = cfg.get("badge_pos_x")
             saved_y = cfg.get("badge_pos_y")
 
             if saved_x is not None and saved_y is not None:
                 x = int(saved_x)
                 y = int(saved_y)
-                # Giới hạn an toàn trong phạm vi màn hình
                 x = max(0, min(screen_w - w, x))
                 y = max(0, min(screen_h - h, y))
             else:
-                # Vị trí mặc định: Tại phần đồng hồ ở góc dưới bên phải màn hình
                 tb_h = max(36, screen_h - work_b) if screen_h > work_b else 40
-                clock_right_margin = 75  # Nằm ngay cạnh phần đồng hồ hệ thống
-
+                clock_right_margin = 75
                 if screen_h > work_b:
                     y = work_b + (tb_h - h) // 2
                 else:
                     y = screen_h - h - 6
-
                 x = max(10, screen_w - w - clock_right_margin)
 
-            # TỰ ĐỘNG THÍCH ỨNG MÀU CHỮ THEO NỀN MÀN HÌNH TẠI VỊ TRÍ HIỂN THỊ
-            # Nếu nền sáng (như Windows Light Theme Taskbar): dùng xám đậm #1F1F1F
-            # Nếu nền tối (như Windows Dark Theme Taskbar): dùng xám sáng #CDD5E2
-            chosen_fg = str(cfg.get("number_fg", "")).strip()
-            if not chosen_fg or chosen_fg.upper() in ["#CDD5E2", "#CCCCCC", "#A0A0A0", "#111111", "#1F1F1F"]:
-                try:
-                    hdc = ctypes.windll.user32.GetDC(0)
-                    pixel = ctypes.windll.gdi32.GetPixel(hdc, int(x + w // 2), int(y + h // 2))
-                    ctypes.windll.user32.ReleaseDC(0, hdc)
-                    if pixel != -1:
-                        pr = pixel & 0xFF
-                        pg = (pixel >> 8) & 0xFF
-                        pb = (pixel >> 16) & 0xFF
-                        lum = 0.299 * pr + 0.587 * pg + 0.114 * pb
-                        chosen_fg = "#1F1F1F" if lum > 150 else "#CDD5E2"
-                    else:
-                        chosen_fg = "#1F1F1F"
-                except Exception:
-                    chosen_fg = "#1F1F1F"
+            # 3. TỰ ĐỘNG THÍCH ỨNG MÀU CHỮ THEO NỀN MÀN HÌNH TẠI VỊ TRÍ ĐÓ
+            # Nền sáng (như Windows Light Theme Taskbar): màu xám đen #1F1F1F
+            # Nền tối (như Windows Dark Theme Taskbar): màu xám bạc #CDD5E2
+            fill_r, fill_g, fill_b = 31, 31, 31
+            try:
+                hdc = ctypes.windll.user32.GetDC(0)
+                pixel = ctypes.windll.gdi32.GetPixel(hdc, int(x + w // 2), int(y + h // 2))
+                ctypes.windll.user32.ReleaseDC(0, hdc)
+                if pixel != -1:
+                    pr = pixel & 0xFF
+                    pg = (pixel >> 8) & 0xFF
+                    pb = (pixel >> 16) & 0xFF
+                    lum = 0.299 * pr + 0.587 * pg + 0.114 * pb
+                    if lum <= 150:
+                        fill_r, fill_g, fill_b = 205, 213, 226
+            except Exception:
+                pass
 
-            text_item = q_canvas.create_text(
-                w // 2, h // 2,
-                text=badge_text,
-                fill=chosen_fg,
-                font=(font_family, font_size),
-                justify="center",
-                anchor="center"
-            )
+            # 4. VẼ HÌNH ẢNH TRONG SUỐT 32-BIT ARGB (HOÀN TOÀN KHÔNG CÓ VIỀN HỒNG)
+            im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(im)
 
-            self._badge_x = x
-            self._badge_y = y
-            self._badge_w = w
-            self._badge_h = h
+            cur_y = pad_y
+            for idx, l in enumerate(lines):
+                bb = draw.textbbox((0, 0), l, font=pil_font)
+                lw = bb[2] - bb[0]
+                lh = bb[3] - bb[1]
+                lx = (w - lw) // 2
+                draw.text((lx, cur_y), l, font=pil_font, fill=(fill_r, fill_g, fill_b, 255))
+                cur_y += lh + 3
 
+            # Chuyển đổi sang BGRA Premultiplied Alpha theo chuẩn Win32 UpdateLayeredWindow
+            raw = bytearray(im.tobytes("raw", "BGRA"))
+            for i in range(0, len(raw), 4):
+                alpha = raw[i + 3]
+                if alpha == 0:
+                    raw[i] = 0
+                    raw[i + 1] = 0
+                    raw[i + 2] = 0
+                elif alpha < 255:
+                    inv = alpha / 255.0
+                    raw[i] = int(raw[i] * inv)
+                    raw[i + 1] = int(raw[i + 1] * inv)
+                    raw[i + 2] = int(raw[i + 2] * inv)
+
+            # 5. TẠO CỬA SỔ VÀ ÁP DỤNG UPDATE LAYERED WINDOW
+            q_win = tk.Toplevel(self._root)
+            q_win.overrideredirect(True)
             q_win.geometry(f"{w}x{h}+{x}+{y}")
             q_win.update_idletasks()
 
-            # Gắn sự kiện kéo thả Tkinter
-            def _tk_on_press(event):
-                self._is_dragging = True
-                self._drag_start_x = event.x_root
-                self._drag_start_y = event.y_root
-                self._win_start_x = self._badge_x
-                self._win_start_y = self._badge_y
-
-            def _tk_on_motion(event):
-                if not getattr(self, "_is_dragging", False):
-                    return
-                dx = event.x_root - self._drag_start_x
-                dy = event.y_root - self._drag_start_y
-                self.move_badge(self._win_start_x + dx, self._win_start_y + dy)
-
-            def _tk_on_release(event):
-                if getattr(self, "_is_dragging", False):
-                    self._is_dragging = False
-                    if self.on_save_pos:
-                        self.on_save_pos(self._badge_x, self._badge_y)
-
-            q_canvas.bind("<Button-1>", _tk_on_press)
-            q_canvas.bind("<B1-Motion>", _tk_on_motion)
-            q_canvas.bind("<ButtonRelease-1>", _tk_on_release)
-
             top_q_hwnd = self._get_toplevel_hwnd(q_win)
             user32 = ctypes.windll.user32
+            gdi32 = ctypes.windll.gdi32
+
             q_style = user32.GetWindowLongW(top_q_hwnd, GWL_EXSTYLE)
-            # Không thêm WS_EX_TRANSPARENT để có thể bắt chuột kéo thả
-            q_style |= (WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW)
-            q_style &= ~WS_EX_TRANSPARENT
+            q_style = (q_style | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW) & ~WS_EX_TRANSPARENT
             user32.SetWindowLongW(top_q_hwnd, GWL_EXSTYLE, q_style)
 
-            alpha_byte = max(1, min(255, int(round(255 * alpha_ratio))))
-            user32.SetLayeredWindowAttributes(top_q_hwnd, 0x00FF00FF, alpha_byte, 1 | 2)
+            hdc_screen = user32.GetDC(0)
+            hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
 
-            # Cực kỳ quan trọng: Luôn đưa lên TOPMOST cấp Win32 và hiển thị ngay
+            bmi = BITMAPINFOHEADER()
+            bmi.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            bmi.biWidth = w
+            bmi.biHeight = -h  # Top-down DIB
+            bmi.biPlanes = 1
+            bmi.biBitCount = 32
+            bmi.biCompression = 0
+
+            ppv = ctypes.c_void_p()
+            hbmp = gdi32.CreateDIBSection(hdc_screen, ctypes.byref(bmi), 0, ctypes.byref(ppv), 0, 0)
+            ctypes.memmove(ppv, bytes(raw), w * h * 4)
+
+            old_bmp = gdi32.SelectObject(hdc_mem, hbmp)
+
+            blend = BLENDFUNCTION(0, 0, 255, 1)  # AC_SRC_ALPHA = 1
+            pt_src = wintypes.POINT(0, 0)
+            pt_dst = wintypes.POINT(x, y)
+            size = wintypes.SIZE(w, h)
+
+            user32.UpdateLayeredWindow(
+                top_q_hwnd, hdc_screen, ctypes.byref(pt_dst), ctypes.byref(size),
+                hdc_mem, ctypes.byref(pt_src), 0, ctypes.byref(blend), ULW_ALPHA
+            )
+
+            # Giải phóng GDI resources
+            user32.ReleaseDC(0, hdc_screen)
+            gdi32.SelectObject(hdc_mem, old_bmp)
+            gdi32.DeleteObject(hbmp)
+            gdi32.DeleteDC(hdc_mem)
+
+            # Đảm bảo hiển thị TOPMOST trên cùng ngay lập tức
             user32.SetWindowPos(
                 top_q_hwnd, HWND_TOPMOST, int(x), int(y), int(w), int(h),
                 SWP_NOACTIVATE | SWP_SHOWWINDOW
             )
             user32.ShowWindow(top_q_hwnd, 5)  # SW_SHOW = 5
 
-            q_win.deiconify()
-            q_win.lift()
-
+            self._badge_x = x
+            self._badge_y = y
+            self._badge_w = w
+            self._badge_h = h
             self._q_badge_win = q_win
             self._q_hwnd = top_q_hwnd
             self._is_showing = True
