@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Overlay Rendering Engine for Tool v3.2
-- KHÔNG vẽ dấu chấm đỏ
-- Hiển thị số câu kèm ký hiệu đáp án (ví dụ '99 A', '99 A, C') trực tiếp ở vị trí số câu
-- Hiển thị văn bản tự luận / câu trả lời ngắn ở góc dưới bên phải màn hình
-- Tối ưu trong suốt và click-through (WS_EX_TRANSPARENT, WS_EX_LAYERED)
+- Form mảnh mai ẩn giấu (như '1abd', '1 A B D', '99 A')
+- ĐÃ XÓA HOÀN TOÀN hộp chữ to theo yêu cầu người dùng
+- Hỗ trợ KÉO THẢ (Drag and Drop) mượt mà đến mọi vị trí trên màn hình
+- TỰ ĐỘNG GHI NHỚ VỊ TRÍ lần cuối khi thả để các lần sau mở đúng vị trí đó
+- Vị trí mặc định: Tại khu vực đồng hồ hệ thống trên Taskbar
+- Màu chữ #CDD5E2 tiệp màu đồng hồ, phông chữ Times New Roman thon gọn kiểu Word
 """
 
 import os
@@ -22,17 +24,30 @@ WS_EX_LAYERED = 0x00080000
 WS_EX_NOACTIVATE = 0x08000000
 WS_EX_TOPMOST = 0x00000008
 WS_EX_TOOLWINDOW = 0x00000080
+SWP_NOSIZE = 0x0001
+SWP_NOZORDER = 0x0004
+SWP_NOACTIVATE = 0x0010
 
 
 class ResultOverlayV32:
-    def __init__(self, get_config_func):
+    def __init__(self, get_config_func, on_save_pos_func=None):
         self.get_config = get_config_func
+        self.on_save_pos = on_save_pos_func
         self._thread = threading.Thread(target=self._run_loop, daemon=True, name="OverlayGUIThread")
         self._ready = threading.Event()
         self._root = None
         self._q_badge_win = None
-        self._text_win = None
-        self._text_region_rect = None
+        self._q_hwnd = None
+        self._badge_x = 0
+        self._badge_y = 0
+        self._badge_w = 0
+        self._badge_h = 0
+        self._is_showing = False
+        self._is_dragging = False
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+        self._win_start_x = 0
+        self._win_start_y = 0
         self.last_show_time = 0.0
         self._thread.start()
         self._ready.wait(timeout=3)
@@ -44,14 +59,40 @@ class ResultOverlayV32:
         self._root.mainloop()
 
     def is_visible(self) -> bool:
-        return getattr(self, "_is_showing", False) and bool(self._q_badge_win or self._text_win)
+        return getattr(self, "_is_showing", False) and bool(self._q_badge_win)
 
-    def is_point_in_text_region(self, x: int, y: int) -> bool:
-        """Kiểm tra con trỏ chuột có đang nằm bên trong vùng chữ đáp án hay không."""
-        if not self._text_win or not self._text_region_rect:
+    def is_point_in_badge(self, x: int, y: int) -> bool:
+        """Kiểm tra xem toạ độ chuột có nằm trong vùng của form mảnh mai (có thêm vùng đệm) hay không."""
+        if not getattr(self, "_is_showing", False) or not self._q_badge_win:
             return False
-        x1, y1, x2, y2 = self._text_region_rect
+        margin = 8  # 8px đệm xung quanh giúp người dùng dễ dàng bấm trúng để kéo thả
+        x1 = self._badge_x - margin
+        y1 = self._badge_y - margin
+        x2 = self._badge_x + self._badge_w + margin
+        y2 = self._badge_y + self._badge_h + margin
         return (x1 <= x <= x2) and (y1 <= y <= y2)
+
+    def get_badge_pos(self) -> Tuple[int, int]:
+        """Lấy toạ độ (x, y) hiện tại của badge."""
+        return (self._badge_x, self._badge_y)
+
+    def move_badge(self, x: int, y: int):
+        """Di chuyển badge ngay lập tức ở cấp độ Win32 SetWindowPos (0ms latency, mượt 60fps+)."""
+        self._badge_x = int(x)
+        self._badge_y = int(y)
+        if self._q_hwnd:
+            try:
+                ctypes.windll.user32.SetWindowPos(
+                    self._q_hwnd, 0, int(x), int(y), 0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+                )
+            except Exception:
+                pass
+        if self._q_badge_win and self._root:
+            try:
+                self._root.after(0, lambda: self._q_badge_win.geometry(f"+{int(x)}+{int(y)}") if self._q_badge_win else None)
+            except Exception:
+                pass
 
     def show_results(
         self,
@@ -72,17 +113,12 @@ class ResultOverlayV32:
         )
 
     def hide_all(self):
-        """Ẩn kết quả ngay lập tức (0ms) ở cấp độ Windows Window Handle, sau đó hủy widget."""
+        """Ẩn form mảnh mai ngay lập tức (0ms) ở cấp độ Win32 Window Handle."""
         self._is_showing = False
         user32 = ctypes.windll.user32
         if getattr(self, "_q_hwnd", None):
             try:
                 user32.ShowWindow(self._q_hwnd, 0)  # SW_HIDE
-            except Exception:
-                pass
-        if getattr(self, "_t_hwnd", None):
-            try:
-                user32.ShowWindow(self._t_hwnd, 0)  # SW_HIDE
             except Exception:
                 pass
 
@@ -98,23 +134,6 @@ class ResultOverlayV32:
                 pass
             self._q_badge_win = None
         self._q_hwnd = None
-
-        if self._text_win:
-            try:
-                self._text_win.destroy()
-            except Exception:
-                pass
-            self._text_win = None
-        self._t_hwnd = None
-
-        if self._text_win:
-            try:
-                self._text_win.destroy()
-            except Exception:
-                pass
-            self._text_win = None
-
-        self._text_region_rect = None
 
     def _get_toplevel_hwnd(self, win):
         try:
@@ -158,136 +177,101 @@ class ResultOverlayV32:
             except Exception:
                 pass
 
-        has_text_content = bool(written_items or status_message or is_waiting)
-        text_y_top = work_b - 40
-
         # ----------------------------------------------------------------------
-        # 1. ĐÁP ÁN TỰ LUẬN / ĐIỀN NGẮN: LỚP CHỮ NỔI KHÔNG VIỀN Ở GÓC DƯỚI PHẢI
+        # XÂY DỰNG NỘI DUNG FORM MẢNH MAI ẨN GIẤU (ĐÃ XÓA HOÀN TOÀN HỘP TO _text_win)
         # ----------------------------------------------------------------------
-        if has_text_content:
-            try:
-                lines = []
-                if is_waiting:
-                    lines.append("⏳ Đang phân tích bài thi...")
-                elif written_items:
-                    if len(written_items) == 1:
-                        it = written_items[0]
-                        q_num_item = str(it.get("question_number", "")).strip()
-                        ans_content = str(it.get("answer_text", "")).strip()
-                        if not ans_content and it.get("answers"):
-                            ans_content = ", ".join(str(a) for a in it.get("answers"))
-                        if ans_content:
-                            if q_num_item:
-                                lines.append(f"Câu {q_num_item}: {ans_content}")
-                            else:
-                                lines.append(ans_content)
+        badge_text = ""
+        if is_waiting:
+            badge_text = "⏳"
+        elif mc_badge_text and str(mc_badge_text).strip():
+            badge_text = str(mc_badge_text).strip()
+        elif written_items:
+            lines = []
+            for it in written_items:
+                q_num_item = str(it.get("question_number", "")).strip()
+                ans_content = str(it.get("answer_text", "")).strip()
+                if not ans_content and it.get("answers"):
+                    ans_content = " ".join(str(a) for a in it.get("answers"))
+                if ans_content:
+                    if q_num_item:
+                        lines.append(f"{q_num_item} {ans_content}")
                     else:
-                        for idx, it in enumerate(written_items):
-                            q_num_item = str(it.get("question_number", "")).strip() or str(idx + 1)
-                            ans_content = str(it.get("answer_text", "")).strip()
-                            if not ans_content and it.get("answers"):
-                                ans_content = ", ".join(str(a) for a in it.get("answers"))
-                            if ans_content:
-                                lines.append(f"Câu {q_num_item}: {ans_content}")
+                        lines.append(ans_content)
+            badge_text = "\n".join(lines).strip()
+        elif status_message and str(status_message).strip():
+            badge_text = str(status_message).strip()
 
-                if status_message and not is_waiting:
-                    lines.append(f"[{status_message}]")
+        if not badge_text:
+            return
 
-                full_text = "\n".join(lines).strip()
-
-                if full_text:
-                    font_size = int(cfg.get("text_font_size", 11))
-                    font_size = max(8, min(40, font_size))
-                    text_fg = str(cfg.get("text_fg", "#111111"))
-                    text_op_val = int(cfg.get("text_opacity", cfg.get("number_opacity", 100)))
-                    text_op_val = max(1, min(100, text_op_val))
-                    alpha_ratio = float(text_op_val) / 100.0
-
-                    wrap_w = min(560, max(280, work_r - 60))
-
-                    t_win = tk.Toplevel(self._root)
-                    t_win.overrideredirect(True)
-                    t_win.attributes("-topmost", True)
-                    t_win.lift()
-
-                    bg_chroma = "#FF00FE"
-                    t_win.configure(bg=bg_chroma)
-                    t_win.attributes("-transparentcolor", bg_chroma)
-                    t_win.attributes("-alpha", alpha_ratio)
-
-                    canvas = tk.Canvas(t_win, bg=bg_chroma, highlightthickness=0)
-                    canvas.pack(fill="both", expand=True)
-
-                    t_item = canvas.create_text(
-                        6, 6,
-                        text=full_text,
-                        font=("Segoe UI", font_size, "bold"),
-                        fill=text_fg,
-                        anchor="nw",
-                        width=wrap_w
-                    )
-
-                    t_win.update_idletasks()
-                    bbox = canvas.bbox(t_item)
-                    if bbox:
-                        content_w = (bbox[2] - bbox[0]) + 14
-                        content_h = (bbox[3] - bbox[1]) + 14
-                    else:
-                        content_w = 340
-                        content_h = 100
-
-                    margin_r = 20
-                    margin_b = 20
-                    tx = max(10, work_r - content_w - margin_r)
-                    ty = max(10, work_b - content_h - margin_b)
-                    text_y_top = ty
-
-                    t_win.geometry(f"{content_w}x{content_h}+{tx}+{ty}")
-                    t_win.update_idletasks()
-
-                    top_t_hwnd = self._get_toplevel_hwnd(t_win)
-                    user32 = ctypes.windll.user32
-                    t_style = user32.GetWindowLongW(top_t_hwnd, GWL_EXSTYLE)
-                    t_style |= (WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW)
-                    user32.SetWindowLongW(top_t_hwnd, GWL_EXSTYLE, t_style)
-                    alpha_byte = max(1, min(255, int(round(255 * alpha_ratio))))
-                    user32.SetLayeredWindowAttributes(top_t_hwnd, 0x00FE00FF, alpha_byte, 1 | 2)
-
-                    self._text_win = t_win
-                    self._t_hwnd = top_t_hwnd
-                    self._text_region_rect = (tx, ty, tx + content_w, ty + content_h)
-                    self._is_showing = True
-
-            except Exception as e:
-                pass
-
-        # ----------------------------------------------------------------------
-        # 2. HIỂN THỊ SỐ CÂU KÈM ĐÁP ÁN TRẮC NGHIỆM TẠI PHẦN GIỜ (TOOL V3.2)
-        # Nằm ở góc dưới bên phải, ngay phần hiển thị giờ hệ thống của Taskbar / SEB
-        # Màu chữ xám (#A0A0A0) đồng bộ với màu chữ của phần giờ hệ thống
-        # KHÔNG vẽ dấu chấm đỏ.
-        # ----------------------------------------------------------------------
-        badge_text = str(mc_badge_text).strip()
         num_opacity = int(cfg.get("number_opacity", 100))
         number_color = str(cfg.get("number_fg", "#CDD5E2")).strip() or "#CDD5E2"
         font_family = str(cfg.get("number_font_family", "Times New Roman")).strip() or "Times New Roman"
 
-        if badge_text:
-            try:
-                lines = [line.strip() for line in badge_text.split("\n") if line.strip()]
-                line_count = len(lines)
-                max_line_len = max(len(l) for l in lines) if lines else 4
+        try:
+            lines = [line.strip() for line in badge_text.split("\n") if line.strip()]
+            line_count = len(lines)
 
-                # Dáng chữ thon gọn thanh thoát chuẩn văn bản Word (Times New Roman)
-                font_size = 11 if line_count <= 2 else 10
-                pad_x = 6
-                pad_y = 2
-                w = max(42, max_line_len * 8 + pad_x * 2)
-                h = max(22, line_count * (font_size + 4) + pad_y * 2)
+            # Dáng chữ thon gọn thanh thoát chuẩn văn bản Word (Times New Roman)
+            font_size = 11 if line_count <= 2 else 10
 
-                # Căn dọc ngay giữa dải Taskbar / phần giờ dưới cùng bên phải
+            q_win = tk.Toplevel(self._root)
+            q_win.overrideredirect(True)
+            q_win.attributes("-topmost", True)
+            q_win.lift()
+
+            alpha_ratio = max(0.01, min(1.0, float(num_opacity) / 100.0))
+            q_win.attributes("-alpha", alpha_ratio)
+
+            bg_key = "#FF00FF"
+            q_win.configure(bg=bg_key)
+            q_win.attributes("-transparentcolor", bg_key)
+
+            q_canvas = tk.Canvas(q_win, bg=bg_key, highlightthickness=0)
+            q_canvas.pack(fill="both", expand=True)
+
+            # Chữ thon gọn chuẩn kiểu Word (Times New Roman), màu xám tiệp màu đồng hồ hệ thống #CDD5E2
+            text_item = q_canvas.create_text(
+                0, 0,
+                text=badge_text,
+                fill=number_color,
+                font=(font_family, font_size),
+                justify="center",
+                anchor="nw"
+            )
+
+            q_win.update_idletasks()
+            bbox = q_canvas.bbox(text_item)
+            if bbox:
+                text_w = (bbox[2] - bbox[0])
+                text_h = (bbox[3] - bbox[1])
+            else:
+                text_w = 40
+                text_h = 20
+
+            pad_x = 6
+            pad_y = 2
+            w = max(38, text_w + pad_x * 2)
+            h = max(20, text_h + pad_y * 2)
+
+            # Căn giữa chữ trong canvas
+            q_canvas.coords(text_item, w // 2, h // 2)
+            q_canvas.itemconfig(text_item, anchor="center")
+
+            # KIỂM TRA VỊ TRÍ ĐÃ LƯU TỪ LẦN THẢ GẦN NHẤT
+            saved_x = cfg.get("badge_pos_x")
+            saved_y = cfg.get("badge_pos_y")
+
+            if saved_x is not None and saved_y is not None:
+                x = int(saved_x)
+                y = int(saved_y)
+                # Giới hạn an toàn trong phạm vi màn hình
+                x = max(0, min(screen_w - w, x))
+                y = max(0, min(screen_h - h, y))
+            else:
+                # Vị trí mặc định: Tại phần đồng hồ ở góc dưới bên phải màn hình
                 tb_h = max(36, screen_h - work_b) if screen_h > work_b else 40
-                clock_right_margin = 75  # Nằm ngay sát bên trái phần giờ hệ thống
+                clock_right_margin = 75  # Nằm ngay cạnh phần đồng hồ hệ thống
 
                 if screen_h > work_b:
                     y = work_b + (tb_h - h) // 2
@@ -296,58 +280,52 @@ class ResultOverlayV32:
 
                 x = max(10, screen_w - w - clock_right_margin)
 
-                q_win = tk.Toplevel(self._root)
-                q_win.overrideredirect(True)
-                q_win.attributes("-topmost", True)
-                q_win.lift()
+            self._badge_x = x
+            self._badge_y = y
+            self._badge_w = w
+            self._badge_h = h
 
-                # Độ mờ 5% tinh tế
-                alpha_ratio = max(0.01, min(1.0, float(num_opacity) / 100.0))
-                q_win.attributes("-alpha", alpha_ratio)
+            q_win.geometry(f"{w}x{h}+{x}+{y}")
+            q_win.update_idletasks()
 
-                bg_key = "#FF00FF"
-                q_win.configure(bg=bg_key)
-                q_win.attributes("-transparentcolor", bg_key)
+            # Gắn sự kiện kéo thả Tkinter
+            def _tk_on_press(event):
+                self._is_dragging = True
+                self._drag_start_x = event.x_root
+                self._drag_start_y = event.y_root
+                self._win_start_x = self._badge_x
+                self._win_start_y = self._badge_y
 
-                q_canvas = tk.Canvas(q_win, width=w, height=h, bg=bg_key, highlightthickness=0)
-                q_canvas.pack(fill="both", expand=True)
+            def _tk_on_motion(event):
+                if not getattr(self, "_is_dragging", False):
+                    return
+                dx = event.x_root - self._drag_start_x
+                dy = event.y_root - self._drag_start_y
+                self.move_badge(self._win_start_x + dx, self._win_start_y + dy)
 
-                # Chữ thon gọn chuẩn kiểu Word (Times New Roman), màu xám bạc tiệp màu đồng hồ hệ thống
-                text_item = q_canvas.create_text(
-                    w // 2, h // 2,
-                    text=badge_text,
-                    fill=number_color,
-                    font=(font_family, font_size),
-                    justify="center"
-                )
+            def _tk_on_release(event):
+                if getattr(self, "_is_dragging", False):
+                    self._is_dragging = False
+                    if self.on_save_pos:
+                        self.on_save_pos(self._badge_x, self._badge_y)
 
-                q_win.update_idletasks()
-                bbox = q_canvas.bbox(text_item)
-                if bbox:
-                    meas_w = (bbox[2] - bbox[0]) + 12
-                    meas_h = (bbox[3] - bbox[1]) + 6
-                    if meas_w > w or meas_h > h:
-                        w = max(w, meas_w)
-                        h = max(h, meas_h)
-                        if screen_h > work_b:
-                            y = work_b + (tb_h - h) // 2
-                        else:
-                            y = screen_h - h - 6
-                        x = max(10, screen_w - w - clock_right_margin)
+            q_canvas.bind("<Button-1>", _tk_on_press)
+            q_canvas.bind("<B1-Motion>", _tk_on_motion)
+            q_canvas.bind("<ButtonRelease-1>", _tk_on_release)
 
-                q_win.geometry(f"{w}x{h}+{x}+{y}")
-                q_win.update_idletasks()
+            top_q_hwnd = self._get_toplevel_hwnd(q_win)
+            user32 = ctypes.windll.user32
+            q_style = user32.GetWindowLongW(top_q_hwnd, GWL_EXSTYLE)
+            # Không thêm WS_EX_TRANSPARENT để có thể bắt chuột kéo thả
+            q_style |= (WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW)
+            q_style &= ~WS_EX_TRANSPARENT
+            user32.SetWindowLongW(top_q_hwnd, GWL_EXSTYLE, q_style)
 
-                top_q_hwnd = self._get_toplevel_hwnd(q_win)
-                user32 = ctypes.windll.user32
-                q_style = user32.GetWindowLongW(top_q_hwnd, GWL_EXSTYLE)
-                q_style |= (WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_TOOLWINDOW)
-                user32.SetWindowLongW(top_q_hwnd, GWL_EXSTYLE, q_style)
-                alpha_byte = max(1, min(255, int(round(255 * alpha_ratio))))
-                user32.SetLayeredWindowAttributes(top_q_hwnd, 0x00FF00FF, alpha_byte, 1 | 2)
+            alpha_byte = max(1, min(255, int(round(255 * alpha_ratio))))
+            user32.SetLayeredWindowAttributes(top_q_hwnd, 0x00FF00FF, alpha_byte, 1 | 2)
 
-                self._q_badge_win = q_win
-                self._q_hwnd = top_q_hwnd
-                self._is_showing = True
-            except Exception:
-                pass
+            self._q_badge_win = q_win
+            self._q_hwnd = top_q_hwnd
+            self._is_showing = True
+        except Exception as e:
+            pass

@@ -172,8 +172,8 @@ def parse_quiz_result_v32(json_text: str) -> Dict[str, Any]:
                 else:
                     display_str = f"{q_num_clean} [Lỗi: Thiếu đáp án]"
             else:
-                ans_str = ", ".join(cleaned_answers)
-                display_str = f"{q_num_clean} {ans_str}"
+                ans_str = " ".join(cleaned_answers)
+                display_str = f"{q_num_clean} {ans_str}".strip()
 
             mc_items.append({
                 "question_number": q_num_clean,

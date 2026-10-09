@@ -51,6 +51,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "text_fg": "#111111",
     "number_fg": "#CDD5E2",
     "number_font_family": "Times New Roman",
+    "badge_pos_x": None,
+    "badge_pos_y": None,
 }
 CONFIG: Dict[str, Any] = dict(DEFAULT_CONFIG)
 
@@ -74,6 +76,18 @@ def save_config(data: Dict[str, Any]):
     CONFIG.update(data)
     try:
         CONFIG_FILE.write_text(json.dumps(CONFIG, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def save_badge_position(x: int, y: int):
+    """Ghi nhớ toạ độ lần cuối khi người dùng thả badge (Drag and Drop)."""
+    global CONFIG
+    CONFIG["badge_pos_x"] = int(x)
+    CONFIG["badge_pos_y"] = int(y)
+    save_config({"badge_pos_x": int(x), "badge_pos_y": int(y)})
+    try:
+        print(GREEN + f"✔ Đã ghi nhớ vị trí hiển thị: ({int(x)}, {int(y)})")
     except Exception:
         pass
 
@@ -165,7 +179,7 @@ if os.name == "nt" and "--setup" not in sys.argv and "--no-hide" not in sys.argv
     hide_console()
 
 # Khởi tạo overlay hiển thị kết quả
-result_overlay = ResultOverlayV32(get_config_func=load_config)
+result_overlay = ResultOverlayV32(get_config_func=load_config, on_save_pos_func=save_badge_position)
 
 # ==============================================================================
 # QUẢN LÝ CON TRỎ XOAY (LOADING CURSOR)
@@ -245,16 +259,17 @@ def show_banner():
     print_box(
         "ĐỨC DẠY BẠN HỌC NHÉ <3",
         [
-            f"TOOLMOUSE v{CURRENT_VERSION} – CHUYÊN BIỆT CHO SEB (ĐÁP ÁN TẠI VỊ TRÍ SỐ CÂU)",
+            f"TOOLMOUSE v{CURRENT_VERSION} – CHUYÊN BIỆT CHO SEB (ĐÁP ÁN FORM MẢNH MAI)",
             "Ctrl + Shift + M: Ẩn / Hiện cửa sổ tool này",
             "Chuột Phải x2   : Chụp toàn màn hình & gửi Gemini phân tích",
             "Chuột Trái x4   : Tự động gõ đáp án tự luận vào ô đang có con trỏ",
-            "Chuột Trái x2   : Hiện kết quả (Số câu kèm đáp án vd '99 A' & tự luận)",
-            "Chuột Trái x1   : Dừng ngay khi đang gõ; ngoài lúc gõ, nhấp ngoài vùng chữ để ẩn",
+            "Chuột Trái x2   : Hiện kết quả (Form mảnh mai ẩn giấu)",
+            "Kéo thả chuột   : Nhấp giữ chuột trái vào đáp án để kéo thả (Tự nhớ vị trí)",
+            "Chuột Trái x1   : Dừng ngay khi đang gõ; nhấp ra ngoài đáp án để ẩn (0ms)",
             "Phím F2         : Mở cửa sổ Cài đặt cấu hình (Setup)",
             "Phím ESC        : Thoát khỏi tool (khi cửa sổ đang mở)",
             "----------------------------------------------------------------------------",
-            "Vị trí & kiểu chữ: Cạnh giờ hệ thống (Times New Roman thon gọn kiểu Word • Rõ 100%)",
+            "Vị trí & kiểu chữ: Kéo thả tự do / Mặc định ở đồng hồ (Times New Roman • Rõ 100%)",
             f"Load chuột      : {cursor_dur}s • Model: {model_name}",
             f"Khóa API        : {api_status}",
         ],
@@ -372,13 +387,14 @@ def capture_and_send_gemini():
         if mc_badge_text:
             summary_lines.append(f"Trắc nghiệm: {mc_badge_text.replace(chr(10), ' | ')}")
         if written_items:
-            summary_lines.append(f"Tự luận/Điền: {len(written_items)} câu (Chữ nổi góc dưới phải)")
+            summary_lines.append(f"Tự luận/Điền: {len(written_items)} câu")
         if status_msg:
             summary_lines.append(f"Thông báo  : {status_msg}")
 
         summary_lines.extend([
-            "👉 BẤM 2 LẦN CHUỘT TRÁI để hiện kết quả (Số câu & đáp án tại vị trí số câu)!",
-            "👉 BẤM 1 LẦN CHUỘT TRÁI ngoài vùng chữ để ẩn kết quả.",
+            "👉 BẤM 2 LẦN CHUỘT TRÁI để hiện kết quả (Form mảnh mai)!",
+            "👉 NHẤP GIỮ CHUỘT TRÁI vào đáp án để kéo thả (Tự nhớ vị trí lần cuối)!",
+            "👉 BẤM 1 LẦN CHUỘT TRÁI ngoài đáp án để ẩn kết quả (0ms).",
             "👉 BẤM 4 LẦN CHUỘT TRÁI để tự động gõ đáp án tự luận vào ô đang trỏ.",
         ])
 
@@ -629,7 +645,9 @@ def open_setup():
 # LOW-LEVEL WIN32 MOUSE HOOK
 # ==============================================================================
 WH_MOUSE_LL = 14
+WM_MOUSEMOVE = 0x0200
 WM_LBUTTONDOWN = 0x0201
+WM_LBUTTONUP = 0x0202
 WM_RBUTTONDOWN = 0x0204
 WM_QUIT = 0x0012
 
@@ -668,16 +686,69 @@ pending_left_show_timer = None
 pending_left_hide_timer = None
 mouse_lock = threading.Lock()
 
+is_dragging_badge = False
+drag_start_mouse_x = 0
+drag_start_mouse_y = 0
+drag_start_badge_x = 0
+drag_start_badge_y = 0
+has_moved_while_dragging = False
+
 
 def low_level_mouse_handler(nCode, wParam, lParam):
     global last_right_time, last_left_time, right_click_count, left_click_count
     global pending_left_show_timer, pending_left_hide_timer
+    global is_dragging_badge, drag_start_mouse_x, drag_start_mouse_y
+    global drag_start_badge_x, drag_start_badge_y, has_moved_while_dragging
 
     if nCode >= 0:
         now = time.time()
         dbl_interval = float(CONFIG.get("double_click_interval", 0.35))
 
-        if wParam == WM_RBUTTONDOWN:
+        cursor_x, cursor_y = 0, 0
+        if lParam:
+            try:
+                info = ctypes.cast(lParam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
+                cursor_x = int(info.pt.x)
+                cursor_y = int(info.pt.y)
+            except Exception:
+                pass
+
+        # ----------------------------------------------------------------------
+        # 1. XỬ LÝ KÉO THẢ (DRAG AND DROP) KHI DI CHUYỂN CHUỘT
+        # ----------------------------------------------------------------------
+        if wParam == WM_MOUSEMOVE:
+            if is_dragging_badge:
+                dx = cursor_x - drag_start_mouse_x
+                dy = cursor_y - drag_start_mouse_y
+                if abs(dx) > 1 or abs(dy) > 1:
+                    has_moved_while_dragging = True
+                    result_overlay.move_badge(drag_start_badge_x + dx, drag_start_badge_y + dy)
+            try:
+                return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
+            except Exception:
+                return 0
+
+        # ----------------------------------------------------------------------
+        # 2. XỬ LÝ THẢ CHUỘT (DROP) VÀ LƯU VỊ TRÍ MỚI
+        # ----------------------------------------------------------------------
+        elif wParam == WM_LBUTTONUP:
+            if is_dragging_badge:
+                is_dragging_badge = False
+                if has_moved_while_dragging:
+                    final_x, final_y = result_overlay.get_badge_pos()
+                    save_badge_position(final_x, final_y)
+                with mouse_lock:
+                    left_click_count = 0
+                    last_left_time = 0.0
+            try:
+                return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
+            except Exception:
+                return 0
+
+        # ----------------------------------------------------------------------
+        # 3. XỬ LÝ CHUỘT PHẢI (CHỤP TOÀN MÀN HÌNH & GỬI GEMINI GIẢI BÀI)
+        # ----------------------------------------------------------------------
+        elif wParam == WM_RBUTTONDOWN:
             with mouse_lock:
                 if (now - last_right_time) <= dbl_interval:
                     right_click_count += 1
@@ -690,18 +761,12 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                     last_right_time = 0.0
                     threading.Thread(target=capture_and_send_gemini, daemon=True).start()
 
+        # ----------------------------------------------------------------------
+        # 4. XỬ LÝ CHUỘT TRÁI (KÉO THẢ / ẨN / HIỆN / GÕ TỰ LUẬN)
+        # ----------------------------------------------------------------------
         elif wParam == WM_LBUTTONDOWN:
-            cursor_x, cursor_y = 0, 0
-            if lParam:
-                try:
-                    info = ctypes.cast(lParam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
-                    cursor_x = int(info.pt.x)
-                    cursor_y = int(info.pt.y)
-                except Exception:
-                    pass
-
             with mouse_lock:
-                # 1. ĐANG TỰ ĐỘNG GÕ: Chuột trái 1 lần dừng gõ ngay
+                # 4.1 Đang tự động gõ: Chuột trái 1 lần dừng gõ ngay
                 if is_typing:
                     if now - typing_trigger_time >= 0.08:
                         stop_auto_typing()
@@ -711,11 +776,21 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                     else:
                         return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
 
-                # 2. KHÔNG ĐANG GÕ:
+                # 4.2 Kiểm tra nếu kết quả đang hiển thị:
                 just_hid_overlay = False
                 if result_overlay.is_visible():
-                    if not result_overlay.is_point_in_text_region(cursor_x, cursor_y):
-                        # ẨN NGAY LẬP TỨC (0ms) - Cấp độ Windows Window Handle
+                    if result_overlay.is_point_in_badge(cursor_x, cursor_y):
+                        # Bắt đầu kéo thả form mảnh mai! Không ẩn kết quả
+                        is_dragging_badge = True
+                        has_moved_while_dragging = False
+                        drag_start_mouse_x = cursor_x
+                        drag_start_mouse_y = cursor_y
+                        drag_start_badge_x, drag_start_badge_y = result_overlay.get_badge_pos()
+                        left_click_count = 0
+                        last_left_time = 0.0
+                        return win_user32.CallNextHookEx(None, nCode, wParam, lParam)
+                    else:
+                        # Nhấp ra NGOÀI form đáp án: Ẩn ngay lập tức (0ms)
                         hide_saved_coordinate()
                         just_hid_overlay = True
                         if pending_left_show_timer:
@@ -766,9 +841,9 @@ def low_level_mouse_handler(nCode, wParam, lParam):
                                 pending_left_show_timer.cancel()
                             except Exception:
                                 pass
-                        pending_left_show_timer = threading.Timer(wait_for_quad, _execute_show_if_not_quad)
-                        pending_left_show_timer.daemon = True
-                        pending_left_show_timer.start()
+                            pending_left_show_timer = threading.Timer(wait_for_quad, _execute_show_if_not_quad)
+                            pending_left_show_timer.daemon = True
+                            pending_left_show_timer.start()
 
                 elif left_click_count == 1:
                     # Đã ẩn ngay lập tức ở trên (0ms)
