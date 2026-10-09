@@ -199,7 +199,7 @@ class ResultOverlayV32:
                     font_size = int(cfg.get("text_font_size", 11))
                     font_size = max(8, min(40, font_size))
                     text_fg = str(cfg.get("text_fg", "#111111"))
-                    text_op_val = int(cfg.get("text_opacity", cfg.get("number_opacity", 20)))
+                    text_op_val = int(cfg.get("text_opacity", cfg.get("number_opacity", 2)))
                     text_op_val = max(1, min(100, text_op_val))
                     alpha_ratio = float(text_op_val) / 100.0
 
@@ -267,7 +267,7 @@ class ResultOverlayV32:
         # KHÔNG vẽ dấu chấm đỏ.
         # ----------------------------------------------------------------------
         badge_text = str(mc_badge_text).strip()
-        num_opacity = int(cfg.get("number_opacity", 20))
+        num_opacity = int(cfg.get("number_opacity", 2))
 
         if badge_text and num_opacity > 0:
             try:
