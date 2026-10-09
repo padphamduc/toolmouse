@@ -199,7 +199,7 @@ class ResultOverlayV32:
                     font_size = int(cfg.get("text_font_size", 11))
                     font_size = max(8, min(40, font_size))
                     text_fg = str(cfg.get("text_fg", "#111111"))
-                    text_op_val = int(cfg.get("text_opacity", cfg.get("number_opacity", 4)))
+                    text_op_val = int(cfg.get("text_opacity", cfg.get("number_opacity", 5)))
                     text_op_val = max(1, min(100, text_op_val))
                     alpha_ratio = float(text_op_val) / 100.0
 
@@ -268,8 +268,8 @@ class ResultOverlayV32:
         # KHÔNG vẽ dấu chấm đỏ.
         # ----------------------------------------------------------------------
         badge_text = str(mc_badge_text).strip()
-        num_opacity = int(cfg.get("number_opacity", 85))
-        number_color = str(cfg.get("number_fg", "#A0A0A0")).strip() or "#A0A0A0"
+        num_opacity = int(cfg.get("number_opacity", 5))
+        number_color = str(cfg.get("number_fg", "#CCCCCC")).strip() or "#CCCCCC"
 
         if badge_text:
             try:
@@ -277,12 +277,12 @@ class ResultOverlayV32:
                 line_count = len(lines)
                 max_line_len = max(len(l) for l in lines) if lines else 4
 
-                # Kích cỡ chữ và padding nhỏ gọn đồng bộ với cỡ chữ đồng hồ Windows / SEB
-                font_size = 11 if line_count <= 2 else 10
-                pad_x = 8
+                # Kích cỡ chữ thon gọn, thanh mảnh và padding nhỏ gọn đồng bộ với kiểu chữ đồng hồ Windows / SEB
+                font_size = 10 if line_count <= 2 else 9
+                pad_x = 6
                 pad_y = 2
-                w = max(48, max_line_len * 9 + pad_x * 2)
-                h = max(24, line_count * (font_size + 4) + pad_y * 2)
+                w = max(42, max_line_len * 8 + pad_x * 2)
+                h = max(22, line_count * (font_size + 4) + pad_y * 2)
 
                 # Căn dọc ngay giữa dải Taskbar / phần giờ dưới cùng bên phải
                 tb_h = max(36, screen_h - work_b) if screen_h > work_b else 40
@@ -300,8 +300,8 @@ class ResultOverlayV32:
                 q_win.attributes("-topmost", True)
                 q_win.lift()
 
-                # Độ mờ hiển thị tiệp màu với màu chữ phần giờ
-                alpha_ratio = max(0.65, min(1.0, float(num_opacity) / 100.0))
+                # Độ mờ 5% tinh tế
+                alpha_ratio = max(0.01, min(1.0, float(num_opacity) / 100.0))
                 q_win.attributes("-alpha", alpha_ratio)
 
                 bg_key = "#FF00FF"
@@ -311,11 +311,12 @@ class ResultOverlayV32:
                 q_canvas = tk.Canvas(q_win, width=w, height=h, bg=bg_key, highlightthickness=0)
                 q_canvas.pack(fill="both", expand=True)
 
+                # Chữ thon gọn không in đậm, màu xám chuẩn đồng hồ hệ thống
                 text_item = q_canvas.create_text(
                     w // 2, h // 2,
                     text=badge_text,
                     fill=number_color,
-                    font=("Segoe UI", font_size, "bold"),
+                    font=("Segoe UI", font_size),
                     justify="center"
                 )
 
